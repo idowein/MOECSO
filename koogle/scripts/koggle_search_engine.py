@@ -29,9 +29,8 @@ class SmartSearchApp:
         """
         self.splash = tk.Toplevel()
         self.splash.title("Koogle - Loading")
-        self.splash.overrideredirect(True)  # Strips standard window borders
+        self.splash.overrideredirect(True)
         
-        # Center the splash panel cleanly on the user's desktop display
         splash_width = 500
         splash_height = 380
         screen_width = self.splash.winfo_screenwidth()
@@ -39,41 +38,30 @@ class SmartSearchApp:
         x_coordinate = int((screen_width / 2) - (splash_width / 2))
         y_coordinate = int((screen_height / 2) - (splash_height / 2))
         self.splash.geometry(f"{splash_width}x{splash_height}+{x_coordinate}+{y_coordinate}")
-        self.splash.configure(bg="#ffffff")  # Clean white backdrop
+        self.splash.configure(bg="#ffffff")
 
-        # Canvas block containing the logo asset image
         logo_path = os.path.join(os.path.dirname(__file__) if __file__ else "", LOGO_IMAGE_NAME)
         if os.path.exists(logo_path):
             try:
-                # Open image using Pillow
                 pil_image = Image.open(logo_path)
-                
-                # Dynamic scaling: Resize image proportionally to fit nicely inside the splash window
-                # Target width of 350px, calculate height maintaining aspect ratio
                 target_width = 350
                 w_percent = target_width / float(pil_image.size[0])
                 target_height = int(float(pil_image.size[1]) * float(w_percent))
                 
-                # Apply high-quality antialiasing filter during resize operation
                 resized_pil_image = pil_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                
-                # Convert Pillow image to a Tkinter compatible PhotoImage object
                 self.logo_img = ImageTk.PhotoImage(resized_pil_image)
                 
                 logo_label = tk.Label(self.splash, image=self.logo_img, bg="#ffffff")
                 logo_label.pack(pady=(40, 10))
             except Exception as img_err:
-                # Fallback if image rendering fails
                 print(f"Image resize error: {img_err}")
                 tk.Label(self.splash, text="KOOGLE", font=("Segoe UI", 36, "bold"), fg="#4285F4", bg="#ffffff").pack(pady=(60, 20))
         else:
             tk.Label(self.splash, text="KOOGLE", font=("Segoe UI", 36, "bold"), fg="#4285F4", bg="#ffffff").pack(pady=(60, 20))
 
-        # Status subtitle tracking phase actions
         self.loading_label = tk.Label(self.splash, text="Initializing Koogle Database Engine... 0%", font=("Segoe UI", 10), fg="#5f6368", bg="#ffffff")
         self.loading_label.pack(pady=(15, 5))
 
-        # Modern Progress Bar layout component
         style = ttk.Style()
         style.theme_use('default')
         style.configure("Koogle.Horizontal.TProgressbar", thickness=10, troughcolor="#f1f3f4", background="#4285F4")
@@ -81,7 +69,6 @@ class SmartSearchApp:
         self.progress_bar = ttk.Progressbar(self.splash, style="Koogle.Horizontal.TProgressbar", orient="horizontal", length=350, mode="determinate")
         self.progress_bar.pack(pady=5)
 
-        # Trigger background worker thread to read dataset rows without freezing GUI loops
         threading.Thread(target=self.load_dataset_worker, daemon=True).start()
 
     def update_splash_progress(self, percent, text):
@@ -114,7 +101,7 @@ class SmartSearchApp:
             self.root.after(0, self.launch_main_application)
             
         except Exception as err:
-            self.root.after(0, self.handle_boot_failure, f"An unexpected fatal system mapping array event occurred:\n{err}")
+            self.root.after(0, self.handle_boot_failure, f"An unexpected fatal initialization event occurred:\n{err}")
 
     def handle_boot_failure(self, message):
         messagebox.showerror("Fatal Initialization Error", message)
@@ -123,12 +110,10 @@ class SmartSearchApp:
         self.root.destroy()
 
     def launch_main_application(self):
-        self.splash.destroy()  # Close loading window completely
-        
-        self.root.deiconify()  # Reveal main search console
+        self.splash.destroy()
+        self.root.deiconify()
         self.root.title("Koogle - Search Cockpit Engine")
         self.root.geometry("800x550")
-        
         self.create_widgets()
 
     def create_widgets(self):
@@ -169,6 +154,7 @@ class SmartSearchApp:
         self.status_label.pack(fill=tk.X, side=tk.BOTTOM)
 
     def execute_keyword_search(self):
+        # Clear existing table rows
         for row in self.results_table.get_children():
             self.results_table.delete(row)
             
@@ -177,40 +163,55 @@ class SmartSearchApp:
             self.status_label.config(text="Warning: Keyword field cannot remain empty.")
             return
             
+        # Parse text directly into separate keyword tokens
         target_keywords = [w.strip().lower() for w in raw_input.split() if w.strip()]
         if not target_keywords:
             return
             
-        self.status_label.config(text=f"Evaluating matrix intersections for targets: {', '.join(target_keywords)}...")
+        self.status_label.config(text=f"Evaluating intersection match matrix for: {', '.join(target_keywords)}...")
         self.root.update_idletasks()
         
         search_results = []
         
         for column_name in self.df.columns:
+            # Clean and flatten column cells into lowercase strings
             column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
             
+            # --- CRITICAL STAGE: STRICT INTERSECTION CHECK (AND CONDITION) ---
+            contains_all_keywords = True
             total_file_hits = 0
+            
             for keyword in target_keywords:
-                total_file_hits += (column_series == keyword).sum()
+                keyword_hits = (column_series == keyword).sum()
                 
-            if total_file_hits > 0:
+                # If even a single keyword is missing completely from this column, fail the validation check
+                if keyword_hits == 0:
+                    contains_all_keywords = False
+                    break
+                
+                # Accumulate score if keyword exists in the file
+                total_file_hits += keyword_hits
+                
+            # Document is only valid if it contains AT LEAST one occurrence of EVERY searched keyword
+            if contains_all_keywords and total_file_hits > 0:
                 search_results.append({
                     "filename": column_name,
                     "score": total_file_hits
                 })
                 
+        # Sort files based on their combined hits
         sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
         
         if not sorted_results:
-            self.status_label.config(text="Zero matching elements traced in indexed layout structures.")
-            messagebox.showinfo("Zero Matches", "Specified keys yield no indexed matrix matches.")
+            self.status_label.config(text="Query executed. Zero matching elements found containing ALL parameters.")
+            messagebox.showinfo("Zero Matches", "No individual PDF documents contain ALL specified keywords together.")
             return
             
         for rank_index, item in enumerate(sorted_results):
             row_data = (rank_index + 1, item["filename"], f"{item['score']:,} times")
             self.results_table.insert("", tk.END, values=row_data)
             
-        self.status_label.config(text=f"Search completed. Found {len(sorted_results)} matching documents ordered by aggregate relevance score.")
+        self.status_label.config(text=f"Search completed. Found {len(sorted_results)} matching documents containing all specified tokens.")
 
 if __name__ == "__main__":
     root_window = tk.Tk()
