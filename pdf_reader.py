@@ -33,7 +33,7 @@ def extract_pdf_words_to_csv(pdf_path):
 
                 if page_text:
                     # Using Regex to find all distinct words (alphanumeric sequences)
-                    words = re.findall(r'\b\w+\b', page_text)
+                    words = re.findall(r'[a-zA-Zא-ת]+', page_text, flags=re.UNICODE)
 
                     # Write each individual word to the spreadsheet
                     for word in words:
