@@ -11,6 +11,9 @@ from PIL import Image, ImageTk
 MATRIX_EXCEL_PATH = r"C:\Users\ed2832\Downloads\MOECSO\koogle\clean data\cleaned_pdf_words_columns.xlsx"
 LOGO_IMAGE_NAME = r"C:\Users\ed2832\Downloads\MOECSO\koogle\koogle logo.png"  # Make sure this file is in the same directory as the script
 
+# Manually set the path to the folder containing your actual PDF files here:
+PDF_DIRECTORY_PATH = r"C:\Users\ed2832\Downloads\final reports 17.05.2026"
+
 class SmartSearchApp:
     def __init__(self, root):
         self.root = root
@@ -24,8 +27,7 @@ class SmartSearchApp:
 
     def show_splash_screen(self):
         """
-        Creates a borderless modern splash window displaying the Koogle logo 
-        resized dynamically to fit within the designated dimensions.
+        Creates a borderless modern splash window displaying the Koogle logo.
         """
         self.splash = tk.Toplevel()
         self.splash.title("Koogle - Loading")
@@ -150,11 +152,13 @@ class SmartSearchApp:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.results_table.pack(fill=tk.BOTH, expand=True)
         
-        self.status_label = ttk.Label(self.root, text=f"Ready. Monitoring query keys over {len(self.df.columns)} cached document blocks.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
+        # --- NEW FEATURE: BIND DOUBLE CLICK EVENT TO TABLE ROWS ---
+        self.results_table.bind("<Double-1>", self.on_row_double_click)
+        
+        self.status_label = ttk.Label(self.root, text=f"Ready. Double-click any row to open its original PDF file.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
         self.status_label.pack(fill=tk.X, side=tk.BOTTOM)
 
     def execute_keyword_search(self):
-        # Clear existing table rows
         for row in self.results_table.get_children():
             self.results_table.delete(row)
             
@@ -163,7 +167,6 @@ class SmartSearchApp:
             self.status_label.config(text="Warning: Keyword field cannot remain empty.")
             return
             
-        # Parse text directly into separate keyword tokens
         target_keywords = [w.strip().lower() for w in raw_input.split() if w.strip()]
         if not target_keywords:
             return
@@ -174,32 +177,24 @@ class SmartSearchApp:
         search_results = []
         
         for column_name in self.df.columns:
-            # Clean and flatten column cells into lowercase strings
             column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
             
-            # --- CRITICAL STAGE: STRICT INTERSECTION CHECK (AND CONDITION) ---
             contains_all_keywords = True
             total_file_hits = 0
             
             for keyword in target_keywords:
                 keyword_hits = (column_series == keyword).sum()
-                
-                # If even a single keyword is missing completely from this column, fail the validation check
                 if keyword_hits == 0:
                     contains_all_keywords = False
                     break
-                
-                # Accumulate score if keyword exists in the file
                 total_file_hits += keyword_hits
                 
-            # Document is only valid if it contains AT LEAST one occurrence of EVERY searched keyword
             if contains_all_keywords and total_file_hits > 0:
                 search_results.append({
                     "filename": column_name,
                     "score": total_file_hits
                 })
                 
-        # Sort files based on their combined hits
         sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
         
         if not sorted_results:
@@ -211,7 +206,50 @@ class SmartSearchApp:
             row_data = (rank_index + 1, item["filename"], f"{item['score']:,} times")
             self.results_table.insert("", tk.END, values=row_data)
             
-        self.status_label.config(text=f"Search completed. Found {len(sorted_results)} matching documents containing all specified tokens.")
+        self.status_label.config(text="Search completed. Double-click a file row to open it instantly.")
+
+    def on_row_double_click(self, event):
+        """
+        Triggered when a user double-clicks a row inside the results table.
+        Extracts the filename and opens it via the operating system's default handler.
+        """
+        # Identify the specific item row index that was double-clicked
+        selected_item = self.results_table.selection()
+        if not selected_item:
+            return
+            
+        # Extract row metadata values (index 1 contains the filename column)
+        item_values = self.results_table.item(selected_item[0], "values")
+        if not item_values:
+            return
+            
+        pdf_filename = item_values[1] # The document column name from Excel matrix
+        
+        # Resolve full operating system file path mapping
+        full_pdf_path = os.path.join(PDF_DIRECTORY_PATH, pdf_filename)
+        
+        # Validate that the file actually exists inside the specified path directory
+        if not os.path.exists(full_pdf_path):
+            messagebox.showerror(
+                "File Not Found", 
+                f"Could not locate the PDF file inside your directory.\n\nTarget Path:\n{full_pdf_path}\n\nPlease check your PDF_DIRECTORY_PATH setting."
+            )
+            return
+            
+        # Launch the file asynchronously using OS native default applications safely
+        try:
+            self.status_label.config(text=f"Opening document: {pdf_filename}...")
+            print(f"Launching external system process for path: {full_pdf_path}")
+            
+            # Using os.startfile on Windows ensures native default launcher handles the execution loop
+            if os.name == 'nt':
+                os.startfile(full_pdf_path)
+            else:
+                # Fallback multi-platform command array line context execution
+                subprocess.Popen(['xdg-open' if os.name == 'posix' else 'open', full_pdf_path])
+                
+        except Exception as open_err:
+            messagebox.showerror("Execution Error", f"Failed to open PDF document natively:\n{open_err}")
 
 if __name__ == "__main__":
     root_window = tk.Tk()
