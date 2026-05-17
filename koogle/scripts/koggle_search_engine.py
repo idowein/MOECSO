@@ -1,48 +1,137 @@
 import os
+import time
+import threading
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox
+from PIL import Image, ImageTk
 
 # --- CONFIGURATION ---
 # Path to your master matrix Excel sheet where each column is a PDF file
 MATRIX_EXCEL_PATH = r"C:\Users\ed2832\Downloads\MOECSO\koogle\clean data\cleaned_pdf_words_columns.xlsx"
+LOGO_IMAGE_NAME = r"C:\Users\ed2832\Downloads\MOECSO\koogle\koogle logo.png"  # Make sure this file is in the same directory as the script
 
-class KeywordSearchEngine:
-    def __init__(self, root, excel_path):
+class SmartSearchApp:
+    def __init__(self, root):
         self.root = root
-        self.excel_path = excel_path
+        self.df = None
         
-        # Configure main window properties
-        self.root.title("MOECSO - KOOGLE")
+        # Hide the main window context while the splash screen layout is active
+        self.root.withdraw()
+        
+        # Phase 1: Launch the Splash Screen Sequence
+        self.show_splash_screen()
+
+    def show_splash_screen(self):
+        """
+        Creates a borderless modern splash window displaying the Koogle logo 
+        resized dynamically to fit within the designated dimensions.
+        """
+        self.splash = tk.Toplevel()
+        self.splash.title("Koogle - Loading")
+        self.splash.overrideredirect(True)  # Strips standard window borders
+        
+        # Center the splash panel cleanly on the user's desktop display
+        splash_width = 500
+        splash_height = 380
+        screen_width = self.splash.winfo_screenwidth()
+        screen_height = self.splash.winfo_screenheight()
+        x_coordinate = int((screen_width / 2) - (splash_width / 2))
+        y_coordinate = int((screen_height / 2) - (splash_height / 2))
+        self.splash.geometry(f"{splash_width}x{splash_height}+{x_coordinate}+{y_coordinate}")
+        self.splash.configure(bg="#ffffff")  # Clean white backdrop
+
+        # Canvas block containing the logo asset image
+        logo_path = os.path.join(os.path.dirname(__file__) if __file__ else "", LOGO_IMAGE_NAME)
+        if os.path.exists(logo_path):
+            try:
+                # Open image using Pillow
+                pil_image = Image.open(logo_path)
+                
+                # Dynamic scaling: Resize image proportionally to fit nicely inside the splash window
+                # Target width of 350px, calculate height maintaining aspect ratio
+                target_width = 350
+                w_percent = target_width / float(pil_image.size[0])
+                target_height = int(float(pil_image.size[1]) * float(w_percent))
+                
+                # Apply high-quality antialiasing filter during resize operation
+                resized_pil_image = pil_image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                
+                # Convert Pillow image to a Tkinter compatible PhotoImage object
+                self.logo_img = ImageTk.PhotoImage(resized_pil_image)
+                
+                logo_label = tk.Label(self.splash, image=self.logo_img, bg="#ffffff")
+                logo_label.pack(pady=(40, 10))
+            except Exception as img_err:
+                # Fallback if image rendering fails
+                print(f"Image resize error: {img_err}")
+                tk.Label(self.splash, text="KOOGLE", font=("Segoe UI", 36, "bold"), fg="#4285F4", bg="#ffffff").pack(pady=(60, 20))
+        else:
+            tk.Label(self.splash, text="KOOGLE", font=("Segoe UI", 36, "bold"), fg="#4285F4", bg="#ffffff").pack(pady=(60, 20))
+
+        # Status subtitle tracking phase actions
+        self.loading_label = tk.Label(self.splash, text="Initializing Koogle Database Engine... 0%", font=("Segoe UI", 10), fg="#5f6368", bg="#ffffff")
+        self.loading_label.pack(pady=(15, 5))
+
+        # Modern Progress Bar layout component
+        style = ttk.Style()
+        style.theme_use('default')
+        style.configure("Koogle.Horizontal.TProgressbar", thickness=10, troughcolor="#f1f3f4", background="#4285F4")
+        
+        self.progress_bar = ttk.Progressbar(self.splash, style="Koogle.Horizontal.TProgressbar", orient="horizontal", length=350, mode="determinate")
+        self.progress_bar.pack(pady=5)
+
+        # Trigger background worker thread to read dataset rows without freezing GUI loops
+        threading.Thread(target=self.load_dataset_worker, daemon=True).start()
+
+    def update_splash_progress(self, percent, text):
+        self.progress_bar['value'] = percent
+        self.loading_label.config(text=f"{text} {percent}%")
+        self.splash.update_idletasks()
+
+    def load_dataset_worker(self):
+        try:
+            time.sleep(0.5)
+            self.root.after(0, self.update_splash_progress, 15, "Connecting to local file directories...")
+            
+            if not os.path.exists(MATRIX_EXCEL_PATH):
+                self.root.after(0, self.handle_boot_failure, f"Database file path location not uncovered:\n{MATRIX_EXCEL_PATH}")
+                return
+
+            time.sleep(0.5)
+            self.root.after(0, self.update_splash_progress, 40, "Opening Excel binary matrix stream arrays...")
+            
+            loaded_df = pd.read_excel(MATRIX_EXCEL_PATH)
+            
+            time.sleep(0.5)
+            self.root.after(0, self.update_splash_progress, 75, f"Indexing column vectors for {len(loaded_df.columns)} documents...")
+            
+            self.df = loaded_df
+            time.sleep(0.5)
+            self.root.after(0, self.update_splash_progress, 100, "System database array verification complete!")
+            time.sleep(0.4)
+            
+            self.root.after(0, self.launch_main_application)
+            
+        except Exception as err:
+            self.root.after(0, self.handle_boot_failure, f"An unexpected fatal system mapping array event occurred:\n{err}")
+
+    def handle_boot_failure(self, message):
+        messagebox.showerror("Fatal Initialization Error", message)
+        if hasattr(self, 'splash'):
+            self.splash.destroy()
+        self.root.destroy()
+
+    def launch_main_application(self):
+        self.splash.destroy()  # Close loading window completely
+        
+        self.root.deiconify()  # Reveal main search console
+        self.root.title("Koogle - Search Cockpit Engine")
         self.root.geometry("800x550")
         
-        # Load the dataset into memory
-        self.load_dataset()
-        
-        # Build the graphical interface layout
         self.create_widgets()
 
-    def load_dataset(self):
-        """
-        Loads the main master Excel matrix where columns represent PDF documents.
-        """
-        if not os.path.exists(self.excel_path):
-            messagebox.showerror("Error", f"Master database file not found at:\n{self.excel_path}")
-            self.root.destroy()
-            return
-        try:
-            print("Loading matrix Excel rows into runtime memory...")
-            self.df = pd.read_excel(self.excel_path)
-            print(f"Successfully indexed {len(self.df.columns)} active documents.")
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load Excel matrix ledger:\n{e}")
-            self.root.destroy()
-
     def create_widgets(self):
-        """
-        Creates and positions window panel widgets.
-        """
-        # Top input panel frame configuration
         search_frame = ttk.Frame(self.root, padding=15)
         search_frame.pack(fill=tk.X)
         
@@ -56,7 +145,6 @@ class KeywordSearchEngine:
         self.search_button = ttk.Button(search_frame, text="Count Keywords", command=self.execute_keyword_search)
         self.search_button.pack(side=tk.LEFT)
         
-        # Center spreadsheet layout grid view (Treeview)
         results_frame = ttk.Frame(self.root, padding=15)
         results_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -77,70 +165,55 @@ class KeywordSearchEngine:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.results_table.pack(fill=tk.BOTH, expand=True)
         
-        # Bottom window layout information status bar
-        self.status_label = ttk.Label(self.root, text=f"Ready. Listening for keywords across {len(self.df.columns)} documents.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
+        self.status_label = ttk.Label(self.root, text=f"Ready. Monitoring query keys over {len(self.df.columns)} cached document blocks.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
         self.status_label.pack(fill=tk.X, side=tk.BOTTOM)
 
     def execute_keyword_search(self):
-        """
-        Tokenizes the raw user entry directly into a query dictionary, 
-        sums up matches per column vector, and sorts documents by absolute weight.
-        """
-        # Clear existing rows inside the layout view grid
         for row in self.results_table.get_children():
             self.results_table.delete(row)
             
         raw_input = self.search_entry.get().strip()
         if not raw_input:
-            self.status_label.config(text="Warning: Keyword input field is empty.")
+            self.status_label.config(text="Warning: Keyword field cannot remain empty.")
             return
             
-        # Step 1: Parse input text directly into separate clean keyword tokens
-        # No stop-word validation or pruning is triggered here
         target_keywords = [w.strip().lower() for w in raw_input.split() if w.strip()]
-        
         if not target_keywords:
             return
             
-        print(f"User search dictionary list generated: {target_keywords}")
-        self.status_label.config(text=f"Calculating distribution matrix for: {', '.join(target_keywords)}...")
+        self.status_label.config(text=f"Evaluating matrix intersections for targets: {', '.join(target_keywords)}...")
         self.root.update_idletasks()
         
         search_results = []
         
-        # Step 2: Loop through each file column to evaluate absolute keyword counts
         for column_name in self.df.columns:
-            # Flatten column cells into clean lowercase strings
             column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
             
-            # Count the occurrences of each word from the user dictionary list
             total_file_hits = 0
             for keyword in target_keywords:
                 total_file_hits += (column_series == keyword).sum()
                 
-            # If the keywords appear at least once, register the document metrics
             if total_file_hits > 0:
                 search_results.append({
                     "filename": column_name,
                     "score": total_file_hits
                 })
                 
-        # Step 3: Sort the matching files database registry in descending order (highest hits first)
         sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
         
         if not sorted_results:
-            self.status_label.config(text="Query executed. Zero matching items uncovered.")
-            messagebox.showinfo("Zero Matches", "The specified keywords do not exist inside any indexed PDF documents.")
+            self.status_label.config(text="Zero matching elements traced in indexed layout structures.")
+            messagebox.showinfo("Zero Matches", "Specified keys yield no indexed matrix matches.")
             return
             
-        # Step 4: Map sorted arrays directly onto graphical tree grid row blocks
         for rank_index, item in enumerate(sorted_results):
             row_data = (rank_index + 1, item["filename"], f"{item['score']:,} times")
             self.results_table.insert("", tk.END, values=row_data)
             
-        self.status_label.config(text=f"Search finalized. Found {len(sorted_results)} matching documents ordered by aggregate frequency.")
+        self.status_label.config(text=f"Search completed. Found {len(sorted_results)} matching documents ordered by aggregate relevance score.")
 
 if __name__ == "__main__":
     root_window = tk.Tk()
-    app = KeywordSearchEngine(root_window, MATRIX_EXCEL_PATH)
+    root_window.geometry("800x550")
+    app = SmartSearchApp(root_window)
     root_window.mainloop()
