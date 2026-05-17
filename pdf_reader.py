@@ -4,7 +4,7 @@ import re
 from pypdf import PdfReader
 
 # configuration
-pdf_path = ""
+pdf_path = f"C:\\Users\\ed2832\\Downloads\\MOECSO\\WarResearches.pdf"
 
 def extract_pdf_words_to_csv(pdf_path):
     """
@@ -16,14 +16,15 @@ def extract_pdf_words_to_csv(pdf_path):
         print(f"Error: file '{pdf_path}' does not exists.")
         return
     
-    csv_path = ""
+    csv_path = f"C:\\Users\\ed2832\\Downloads\\MOECSO\\pdf_to_csv.csv"
 
     try:
         reader = PdfReader(pdf_path)
 
         # open CSV file with UTF 8 encoding for hebrew
         with open(csv_path, mode='w', newline='', encoding='utf-8') as csv_file:
-            writer.writerow(["Word", "Page_Number"])
+            writer = csv.writer(csv_file)
+            writer.writerow(["Word", "Page_Number"]) # headers
             total_words = 0
 
             # iterate through each PDF pages
@@ -43,8 +44,8 @@ def extract_pdf_words_to_csv(pdf_path):
         print(f"Success! Processed {len(reader.pages)} pages.")
         print(f"Extracted {total_words} words into: '{csv_path}'")
 
-    except Exeption as e:
+    except Exception as e:
             print(f"An eerror occured durng execution: {e}")
 
 if __name__ == "__main__":
-    extract_pdf_words_to_csv(pdf)
+    extract_pdf_words_to_csv(pdf_path)
