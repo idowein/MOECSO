@@ -85,3 +85,5 @@ if __name__ == "__main__":
     
     # Run the column-based batch processor
     process_pdfs_as_columns(TARGET_DIRECTORY)
+
+    # https://meyda.education.gov.il/files/LishcatMadaan/
