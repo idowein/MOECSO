@@ -8,8 +8,8 @@ from PIL import Image, ImageTk
 import numpy as np
 
 # --- CONFIGURATION ---
-# Path to your master matrix Excel sheet where each column is a PDF file
-MATRIX_EXCEL_PATH = r"C:\Users\idowe\MyProjects\MOECSO\koogle\clean data\cleaned_pdf_words_columns.xlsx"
+# Optimized for lightning-fast Parquet binary format instead of heavy Excel files
+MATRIX_PARQUET_PATH = r"C:\Users\idowe\MyProjects\MOECSO\koogle\clean data\cleaned_pdf_words_columns.parquet"
 LOGO_IMAGE_NAME = r"C:\Users\idowe\MyProjects\MOECSO\koogle\koogle logo.png"  # Make sure this file is in the same directory as the script
 
 # Manually set the path to the folder containing your actual PDF files here:
@@ -19,6 +19,7 @@ class SmartSearchApp:
     def __init__(self, root):
         self.root = root
         self.df = None
+        self.word_idf_mapping = {}  # Safe initial placeholder configuration to avoid initialization attribute errors
         
         # Hide the main window context while the splash screen layout is active
         self.root.withdraw()
@@ -84,15 +85,15 @@ class SmartSearchApp:
                 time.sleep(0.5)
                 self.root.after(0, self.update_splash_progress, 15, "Connecting to local file directories...")
                 
-                if not os.path.exists(MATRIX_EXCEL_PATH):
-                    self.root.after(0, self.handle_boot_failure, f"Database file path location not uncovered:\n{MATRIX_EXCEL_PATH}")
+                if not os.path.exists(MATRIX_PARQUET_PATH):
+                    self.root.after(0, self.handle_boot_failure, f"Database file path location not uncovered:\n{MATRIX_PARQUET_PATH}")
                     return
 
                 time.sleep(0.5)
-                self.root.after(0, self.update_splash_progress, 35, "Opening Excel binary matrix stream arrays...")
+                self.root.after(0, self.update_splash_progress, 35, "Opening database binary matrix streams...")
                 
-                # Load raw dataframe
-                loaded_df = pd.read_excel(MATRIX_EXCEL_PATH)
+                # FIXED: Shifted from read_excel to read_parquet to clear the 35% bottleneck instantly
+                loaded_df = pd.read_parquet(MATRIX_PARQUET_PATH)
                 
                 time.sleep(0.5)
                 self.root.after(0, self.update_splash_progress, 55, "Optimizing database text layers in memory...")
@@ -177,7 +178,6 @@ class SmartSearchApp:
         IDF = ln (Total documents / Document containing keyword)
         weight function
         """
-        import numpy as np
         total_docs = len(self.df.columns)
         self.word_idf_mapping = {}
         
@@ -254,6 +254,7 @@ class SmartSearchApp:
         # Sort files based on their sophisticated weighted score rather than raw frequency count
         sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
         
+        # --- YOUR ORIGINAL COMMENTED CODE PRESERVED UNTOUCHED ---
         # for column_name in self.df.columns:
         #     column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
             
@@ -274,6 +275,7 @@ class SmartSearchApp:
         #         })
                 
         #sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
+        # --------------------------------------------------------
         
         if not sorted_results:
             self.status_label.config(text="Query executed. Zero matching elements found containing ALL parameters.")
@@ -281,7 +283,8 @@ class SmartSearchApp:
             return
             
         for rank_index, item in enumerate(sorted_results):
-            row_data = (rank_index + 1, item["filename"], f"{item['score']:,} times")
+            # FIXED: Formatted safely via :.2f to handle float logarithm scores without throwing formatting type errors
+            row_data = (rank_index + 1, item["filename"], f"{item['score']:.2f} score")
             self.results_table.insert("", tk.END, values=row_data)
             
         self.status_label.config(text="Search completed. Double-click a file row to open it instantly.")
@@ -324,6 +327,7 @@ class SmartSearchApp:
                 os.startfile(full_pdf_path)
             else:
                 # Fallback multi-platform command array line context execution
+                import subprocess
                 subprocess.Popen(['xdg-open' if os.name == 'posix' else 'open', full_pdf_path])
                 
         except Exception as open_err:
