@@ -242,30 +242,7 @@ class SmartSearchApp:
                 })
             
         sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
-        
-        # --- YOUR ORIGINAL COMMENTED CODE PRESERVED UNTOUCHED ---
-        # for column_name in self.df.columns:
-        #     column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
-            
-        #     contains_all_keywords = True
-        #     total_file_hits = 0
-            
-        #     for keyword in target_keywords:
-        #         keyword_hits = (column_series == keyword).sum()
-        #         if keyword_hits == 0:
-        #             contains_all_keywords = False
-        #             break
-        #         total_file_hits += keyword_hits
-                
-        #     if contains_all_keywords and total_file_hits > 0:
-        #         search_results.append({
-        #             "filename": column_name,
-        #             "score": total_file_hits
-        #         })
-                
-        #sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
-        # --------------------------------------------------------
-        
+
         if not sorted_results:
             self.status_label.config(text="Query executed. Zero matching elements found containing ALL parameters.")
             messagebox.showinfo("Zero Matches", "No individual PDF documents contain ALL specified keywords together.")
