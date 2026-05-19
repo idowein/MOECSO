@@ -1,0 +1,1 @@
+py -m PyInstaller --noconfirm --onefile --windowed --splash "koogle logo.png" --add-data "cleaned_pdf_words_columns.parquet;." --add-data "koogle logo.png;." --add-data "final reports 17.05.2026;pdfs" "koggle_search_engine.py"
