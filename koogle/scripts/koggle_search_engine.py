@@ -79,6 +79,7 @@ class SmartSearchApp:
         self.splash.update_idletasks()
 
     def load_dataset_worker(self):
+        """reading csv into the RAM"""
         try:
             time.sleep(0.5)
             self.root.after(0, self.update_splash_progress, 15, "Connecting to local file directories...")
@@ -157,6 +158,35 @@ class SmartSearchApp:
         
         self.status_label = ttk.Label(self.root, text=f"Ready. Double-click any row to open its original PDF file.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
         self.status_label.pack(fill=tk.X, side=tk.BOTTOM)
+
+def calculate_database_idf(self):
+    """
+    Computes the Inverse Document Frequency (IDF) for every unique word 
+    across all documents during the splash screen loading phase.
+
+    IDF = ln (Total documents / Document containing keyword)
+    weight function
+    """
+    print("Calculating TF-IDF weights for the entire repository...")
+    total_docs = len(self.df.columns)
+    self.word_idf_mapping = {} # dictionary that will contain words+idf_score
+    
+    # Flatten all words into a single unique vocabulary set to optimize processing
+    all_unique_words = set(self.df.values.flatten()) #making all XL file values to one list (flatten), set - reducing several times apearing word
+    
+    for word in all_unique_words:
+        if pd.isna(word): # checking NaN (not a number, empty values)
+            continue
+        token = str(word).strip().lower() # strip - cleaning unnecessary spaces before and after the word
+        
+        # Count how many columns (documents) contain this exact word at least once
+        doc_count = sum(self.df[col].dropna().astype(str).str.strip().str.lower().eq(token).any() for col in self.df.columns)
+        
+        if doc_count > 0:
+            # Traditional log-smooth IDF formula. the scores save under the token name
+            self.word_idf_mapping[token] = np.log(total_docs / float(doc_count)) # log in numpy = ln
+        else:
+            self.word_idf_mapping[token] = 0.0
 
     def execute_keyword_search(self):
         for row in self.results_table.get_children():
