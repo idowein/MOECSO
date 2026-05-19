@@ -20,7 +20,7 @@ def resource_path(relative_path):
 # --- CONFIGURATION (DYNAMIC RESOLUTION FOR SINGLE EXE BUNDLE) ---
 MATRIX_PARQUET_PATH = resource_path("cleaned_pdf_words_columns.parquet")
 LOGO_IMAGE_NAME = resource_path("koogle logo.png")
-PDF_DIRECTORY_PATH = resource_path("pdfs") # Virtual PDF directory inside the single EXE
+PDF_DIRECTORY_PATH = resource_path("final reports 17.05.2026") # Virtual PDF directory inside the single EXE
 
 class SmartSearchApp:
     def __init__(self, root):
