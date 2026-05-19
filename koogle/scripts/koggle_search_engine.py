@@ -5,6 +5,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
+import numpy as np
 
 # --- CONFIGURATION ---
 # Path to your master matrix Excel sheet where each column is a PDF file
@@ -79,33 +80,42 @@ class SmartSearchApp:
         self.splash.update_idletasks()
 
     def load_dataset_worker(self):
-        """reading csv into the RAM"""
-        try:
-            time.sleep(0.5)
-            self.root.after(0, self.update_splash_progress, 15, "Connecting to local file directories...")
-            
-            if not os.path.exists(MATRIX_EXCEL_PATH):
-                self.root.after(0, self.handle_boot_failure, f"Database file path location not uncovered:\n{MATRIX_EXCEL_PATH}")
-                return
+            try:
+                time.sleep(0.5)
+                self.root.after(0, self.update_splash_progress, 15, "Connecting to local file directories...")
+                
+                if not os.path.exists(MATRIX_EXCEL_PATH):
+                    self.root.after(0, self.handle_boot_failure, f"Database file path location not uncovered:\n{MATRIX_EXCEL_PATH}")
+                    return
 
-            time.sleep(0.5)
-            self.root.after(0, self.update_splash_progress, 40, "Opening Excel binary matrix stream arrays...")
-            
-            loaded_df = pd.read_excel(MATRIX_EXCEL_PATH)
-            
-            time.sleep(0.5)
-            self.root.after(0, self.update_splash_progress, 75, f"Indexing column vectors for {len(loaded_df.columns)} documents...")
-            
-            self.df = loaded_df
-            time.sleep(0.5)
-            self.root.after(0, self.update_splash_progress, 100, "System database array verification complete!")
-            time.sleep(0.4)
-            
-            self.root.after(0, self.launch_main_application)
-            
-        except Exception as err:
-            self.root.after(0, self.handle_boot_failure, f"An unexpected fatal initialization event occurred:\n{err}")
-
+                time.sleep(0.5)
+                self.root.after(0, self.update_splash_progress, 35, "Opening Excel binary matrix stream arrays...")
+                
+                # Load raw dataframe
+                loaded_df = pd.read_excel(MATRIX_EXCEL_PATH)
+                
+                time.sleep(0.5)
+                self.root.after(0, self.update_splash_progress, 55, "Optimizing database text layers in memory...")
+                
+                # --- OPTIMIZATION: Normalize the entire dataframe ONCE ahead of time ---
+                # This strips whitespace and lowers cases globally, removing the bottleneck
+                self.df = loaded_df.dropna(how='all').astype(str).map(lambda x: x.strip().lower() if pd.notna(x) else x)
+                
+                time.sleep(0.5)
+                self.root.after(0, self.update_splash_progress, 80, "Generating fast TF-IDF mapping dictionary...")
+                
+                # Trigger the newly optimized ultra-fast weight calculator
+                self.calculate_database_idf()
+                
+                time.sleep(0.5)
+                self.root.after(0, self.update_splash_progress, 100, "System database array verification complete!")
+                time.sleep(0.4)
+                
+                self.root.after(0, self.launch_main_application)
+                
+            except Exception as err:
+                self.root.after(0, self.handle_boot_failure, f"An unexpected fatal initialization event occurred:\n{err}")
+                
     def handle_boot_failure(self, message):
         messagebox.showerror("Fatal Initialization Error", message)
         if hasattr(self, 'splash'):
@@ -159,34 +169,41 @@ class SmartSearchApp:
         self.status_label = ttk.Label(self.root, text=f"Ready. Double-click any row to open its original PDF file.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
         self.status_label.pack(fill=tk.X, side=tk.BOTTOM)
 
-def calculate_database_idf(self):
-    """
-    Computes the Inverse Document Frequency (IDF) for every unique word 
-    across all documents during the splash screen loading phase.
+    def calculate_database_idf(self):
+        """
+        Computes the Inverse Document Frequency (IDF) for every unique word 
+        across all documents during the splash screen loading phase.
 
-    IDF = ln (Total documents / Document containing keyword)
-    weight function
-    """
-    print("Calculating TF-IDF weights for the entire repository...")
-    total_docs = len(self.df.columns)
-    self.word_idf_mapping = {} # dictionary that will contain words+idf_score
-    
-    # Flatten all words into a single unique vocabulary set to optimize processing
-    all_unique_words = set(self.df.values.flatten()) #making all XL file values to one list (flatten), set - reducing several times apearing word
-    
-    for word in all_unique_words:
-        if pd.isna(word): # checking NaN (not a number, empty values)
-            continue
-        token = str(word).strip().lower() # strip - cleaning unnecessary spaces before and after the word
+        IDF = ln (Total documents / Document containing keyword)
+        weight function
+        """
+        import numpy as np
+        total_docs = len(self.df.columns)
+        self.word_idf_mapping = {}
         
-        # Count how many columns (documents) contain this exact word at least once
-        doc_count = sum(self.df[col].dropna().astype(str).str.strip().str.lower().eq(token).any() for col in self.df.columns)
+        # Step 1: Extract a unique vocabulary set across the entire cleaned matrix
+        # Since self.df is already flattened, normalized, and cleaned, this is instant
+        all_unique_words = set(self.df.values.flatten())
         
-        if doc_count > 0:
-            # Traditional log-smooth IDF formula. the scores save under the token name
-            self.word_idf_mapping[token] = np.log(total_docs / float(doc_count)) # log in numpy = ln
-        else:
-            self.word_idf_mapping[token] = 0.0
+        # Step 2: Convert each column vector into a native Python set for O(1) membership lookups
+        # This prevents Pandas from rescanning columns over and over again
+        doc_sets = [set(self.df[col].dropna()) for col in self.df.columns]
+        
+        # Step 3: Count document occurrences using lightning-fast set lookups
+        for word in all_unique_words:
+            if pd.isna(word) or word == 'nan':
+                continue
+                
+            # Count how many document sets contain this word
+            doc_count = sum(1 for d_set in doc_sets if word in d_set)
+            
+            if doc_count > 0:
+                # Apply log-smooth IDF formula
+                self.word_idf_mapping[word] = np.log(total_docs / float(doc_count))
+            else:
+                self.word_idf_mapping[word] = 0.0
+                
+        print(f"Successfully vectorized and mapped weights for {len(self.word_idf_mapping)} unique tokens instantly.")
 
     def execute_keyword_search(self):
         for row in self.results_table.get_children():
@@ -205,27 +222,58 @@ def calculate_database_idf(self):
         self.root.update_idletasks()
         
         search_results = []
-        
+
         for column_name in self.df.columns:
             column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
             
             contains_all_keywords = True
-            total_file_hits = 0
+            weighted_document_score = 0.0
             
             for keyword in target_keywords:
                 keyword_hits = (column_series == keyword).sum()
+                
+                # Strict intersection check (AND condition) remains active
                 if keyword_hits == 0:
                     contains_all_keywords = False
                     break
-                total_file_hits += keyword_hits
                 
-            if contains_all_keywords and total_file_hits > 0:
+                # --- ADVANCED WEIGHTING LAYER (TF-IDF) ---
+                # Retrieve the pre-calculated IDF weight (default to 1.0 if not cached)
+                word_idf = self.word_idf_mapping.get(keyword, 1.0)
+                
+                # Calculate the weighted score for this keyword inside the document
+                # Term Frequency (hits) * Inverse Document Frequency (rarity)
+                weighted_document_score += (keyword_hits * word_idf)
+                
+            if contains_all_keywords and weighted_document_score > 0:
                 search_results.append({
                     "filename": column_name,
-                    "score": total_file_hits
+                    "score": weighted_document_score
                 })
-                
+            
+        # Sort files based on their sophisticated weighted score rather than raw frequency count
         sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
+        
+        # for column_name in self.df.columns:
+        #     column_series = self.df[column_name].dropna().astype(str).str.strip().str.lower()
+            
+        #     contains_all_keywords = True
+        #     total_file_hits = 0
+            
+        #     for keyword in target_keywords:
+        #         keyword_hits = (column_series == keyword).sum()
+        #         if keyword_hits == 0:
+        #             contains_all_keywords = False
+        #             break
+        #         total_file_hits += keyword_hits
+                
+        #     if contains_all_keywords and total_file_hits > 0:
+        #         search_results.append({
+        #             "filename": column_name,
+        #             "score": total_file_hits
+        #         })
+                
+        #sorted_results = sorted(search_results, key=lambda x: x["score"], reverse=True)
         
         if not sorted_results:
             self.status_label.config(text="Query executed. Zero matching elements found containing ALL parameters.")
