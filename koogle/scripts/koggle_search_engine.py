@@ -8,11 +8,11 @@ from PIL import Image, ImageTk
 
 # --- CONFIGURATION ---
 # Path to your master matrix Excel sheet where each column is a PDF file
-MATRIX_EXCEL_PATH = r"C:\Users\ed2832\Downloads\MOECSO\koogle\clean data\cleaned_pdf_words_columns.xlsx"
-LOGO_IMAGE_NAME = r"C:\Users\ed2832\Downloads\MOECSO\koogle\koogle logo.png"  # Make sure this file is in the same directory as the script
+MATRIX_EXCEL_PATH = r"C:\Users\idowe\MyProjects\MOECSO\koogle\clean data\cleaned_pdf_words_columns.xlsx"
+LOGO_IMAGE_NAME = r"C:\Users\idowe\MyProjects\MOECSO\koogle\koogle logo.png"  # Make sure this file is in the same directory as the script
 
 # Manually set the path to the folder containing your actual PDF files here:
-PDF_DIRECTORY_PATH = r"C:\Users\ed2832\Downloads\final reports 17.05.2026"
+PDF_DIRECTORY_PATH = r"C:\Users\idowe\MyProjects\final reports 17.05.2026"
 
 class SmartSearchApp:
     def __init__(self, root):
