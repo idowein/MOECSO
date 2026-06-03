@@ -1,5 +1,5 @@
 import csv
-import re
+import spacy
 from collections import defaultdict
 
 # --- CONFIGURATION PATHS ---
@@ -78,7 +78,7 @@ WORDS_TO_REMOVE = {
     "סוכות", "חגים", "חג", "תשפ\"ו", "תשפ\"ה", "תשפ\"ד", "תשפ\"ג", "תשפ\"ב", "תשפ\"א", "תש\"ו", "תש\"ה", 
     "תש\"ד", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "ישראל", "בישראל", "משרד", 
     "המשרד", "משרדים", "לשכה", "הלשכה", "מדען", "ראשי", "המדען", "הראשי", "הוראה", "למידה", "לימוד", 
-    "חינוך", "החינוך", "מערכת", "המערכת"
+    "חינוך", "החינוך", "מערכת", "המערכת", "פרופ", "ופרופ", "לשכת", "המדענית", "מדענית"
 }
 
 # --- CONSOLIDATION: Unifying split words into a single meaningful phrase token ---
@@ -87,41 +87,37 @@ PHRASE_CONSOLIDATION = {
     "חרבות": "חרבות_ברזל", "ברזל": "חרבות_ברזל",
     "גמישות": "גמישות_פדגוגית", "פדגוגית": "גמישות_פדגוגית", "גפן": "גמישות_פדגוגית", "גפ\"ן": "גמישות_פדגוגית",
     "גני": "גני_ילדים", "ילדים": "גני_ילדים",
-    "עובדי": "עובדי_הוראה", "הוראה": "עובדי_הוראה"
+    "עובדי": "עובדי_הוראה", "מגפה": "מגפת_הקורונה", "קורונה": "מגפת_הקורונה", "מגפה": "מגפת הקורונה", "הקורונה":"מגפת הקורונה"
 }
 
-# --- LEMMATIZATION MAP: Manual remapping dictionary to protect word structures from truncation ---
-EXPLICIT_REMAPS = {
-    "החינוך": "חינוך", "בחינוך": "חינוך", "לחינוך": "חינוך", "מחינוך": "חינוך", "וחינוך": "חינוך",
-    "ההוראה": "הוראה", "בהוראה": "הוראה", "להוראה": "הוראה",
-    "הלמידה": "למידה", "בלמידה": "למידה", "ללמידה": "למידה",
-    "המורים": "מורים", "במורים": "מורים", "למורים": "מורים", "הורה": "הורים", "ההורים": "הורים", "ורים": "הורים", "מור": "מורה",
-    "התלמידים": "תלמידים", "בתלמידים": "תלמידים", "לתלמידים": "תלמידים", "תלמיד": "תלמידים",
-    "חינוכית": "חינוך", "חינוכי": "חינוך", "החינוכי": "חינוך", "החינוכית": "חינוך",
-    "הערכה": "הערכה", "בהערכה": "הערכה", "ההערכה": "הערכה",
-    "המשבר": "משבר", "במשבר": "משבר", "הסביבה": "סביבה", "בסביבה": "סביבה",
-    "אוריינ": "אוריינות"
-}
-
-def clean_hebrew_prefix(word):
+def expand_blacklist_with_prefixes(base_blacklist):
     """
-    Safely strips common Hebrew prepositions/prefixes (ה, ב, ל, כ, מ, ו)
-    from the beginning of the string without truncating or harming word endings.
+    Dynamically expands the words blacklist by prepending common Hebrew preposition 
+    and conjunction prefixes (ו, מ, ה, ב, ל, כ, וה, וב, ול, ומ) to each word.
     """
-    if len(word) <= 3:
-        return word
+    expanded_set = set(base_blacklist)
+    prefixes = ["ו", "מ", "ה", "ב", "ל", "כ", "וה", "وب", "ול", "ומ"]
     
-    # Regular expression matching specific singular Hebrew character prefixes
-    cleaned = re.sub(r'^[ומהבלכ](?=[א-ת]{3,})', '', word)
-    return cleaned
+    for word in base_blacklist:
+        for prefix in prefixes:
+            expanded_set.add(prefix + word)
+            
+    return expanded_set
 
 if __name__ == "__main__":
-    print("🚀 Starting pipeline: Cleaning with massive wordlist, Consolidating, and Normalizing Safely...")
+    print("🧠 Loading Built-in Blank Hebrew spaCy Tokenizer...")
+    nlp = spacy.blank("he")
+
+    # Expand the blacklist to automatically catch all prefix permutations
+    print("🔄 Dynamically expanding blacklist prefixes...")
+    FINAL_WORDS_TO_REMOVE = expand_blacklist_with_prefixes(WORDS_TO_REMOVE)
+    print(f"📈 Blacklist size expanded from {len(WORDS_TO_REMOVE)} to {len(FINAL_WORDS_TO_REMOVE)} variations.")
 
     old_id_to_label = {}
     articles_metadata = []
     
-    # Step 1: Read and process the source map data
+    # Step 1: Read the source map file containing all text nodes
+    print("📂 Reading source mapping structure...")
     with open(INPUT_MAP, 'r', encoding='utf-8-sig') as f:
         reader = csv.reader(f, delimiter='\t')
         header = next(reader)
@@ -135,7 +131,7 @@ if __name__ == "__main__":
             else:
                 old_id_to_label[node_id] = label
 
-    # Build a dictionary for the new sanitized and normalized mapping structure
+    # Map for tracking output labels and computing aggregated Node IDs
     label_to_new_id = {}
     new_map_rows = [header] + articles_metadata
     next_node_id = len(articles_metadata) + 1
@@ -143,37 +139,38 @@ if __name__ == "__main__":
     old_id_to_new_id = {}
     removed_ids = set()
 
+    print("⚡ Tokenizing and filtering terms via standard spaCy pipeline...")
     for old_id, label in old_id_to_label.items():
-        # A) Filter out blacklisted words
-        if label in WORDS_TO_REMOVE:
-            removed_ids.add(old_id)
-            continue
-            
-        # B) Consolidate multi-word phrase components (e.g., school terms or war names)
-        if label in PHRASE_CONSOLIDATION:
-            final_label = PHRASE_CONSOLIDATION[label]
-        # C) Apply explicit static token mappings
-        elif label in EXPLICIT_REMAPS:
-            final_label = EXPLICIT_REMAPS[label]
-        else:
-            # D) Strip minor grammatical prefixes safely
-            final_label = clean_hebrew_prefix(label)
-            
-        if final_label in WORDS_TO_REMOVE or len(final_label) <= 1:
+        # A) Pre-filter using the newly expanded prefix-complete blacklist
+        if label in FINAL_WORDS_TO_REMOVE or len(label) <= 1:
             removed_ids.add(old_id)
             continue
 
-        # Allocate new numeric node IDs or link to an existing consolidated group
+        # B) Handle hardcoded multi-word structures
+        if label in PHRASE_CONSOLIDATION:
+            final_label = PHRASE_CONSOLIDATION[label]
+        else:
+            # C) Rely strictly on the model tokenizer native text output form
+            doc = nlp(label)
+            final_label = doc[0].text.strip() if doc else label
+
+        # D) Secondary check to filter out tokenized outputs hitting the expanded blacklist
+        if final_label in FINAL_WORDS_TO_REMOVE or len(final_label) <= 1:
+            removed_ids.add(old_id)
+            continue
+
+        # Build structural re-indexing records
         if final_label not in label_to_new_id:
             label_to_new_id[final_label] = str(next_node_id)
-            new_map_rows.append([str(next_node_id), final_label, "", "Cleaned Term"])
+            new_map_rows.append([str(next_node_id), final_label, "", "Cleaned NLP Token"])
             next_node_id += 1
             
         old_id_to_new_id[old_id] = label_to_new_id[final_label]
 
-    print(f"Purged {len(removed_ids)} raw words using the massive blacklist. Map structure optimized.")
+    print(f"📉 Filtered out {len(removed_ids)} nodes using the expanded tokenizer pipelines.")
 
-    # Step 2: Read network infrastructure data and aggregate weights for unified edges
+    # Step 2: Read old network file and sum edge connections over the new targets
+    print("📊 Rebuilding and aggregating graph edge connections...")
     network_edges = defaultdict(int)
     
     with open(INPUT_NETWORK, 'r', encoding='utf-8') as f:
@@ -182,21 +179,20 @@ if __name__ == "__main__":
             if not row: continue
             src, tgt, weight = row[0], row[1], int(row[2])
             
-            # Drop connections attached to blacklisted terms
             if src in removed_ids or tgt in removed_ids:
                 continue
                 
-            # Remap old structural node IDs to consolidated target values
             new_src = old_id_to_new_id.get(src, src)
             new_tgt = old_id_to_new_id.get(tgt, tgt)
             
-            # Prevent programmatic self-loops from collapsed tokens
+            # Filter structural self-loops after collapse
             if new_src == new_tgt:
                 continue
                 
             network_edges[(new_src, new_tgt)] += weight
 
-    # Step 3: Write out pristine tab-separated structural outputs for VOSviewer
+    # Step 3: Stream and write tab-separated datasets to final clean destinations
+    print("💾 Saving clean outputs for VOSviewer ingestion...")
     with open(OUTPUT_MAP, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f, delimiter='\t')
         writer.writerows(new_map_rows)
@@ -206,6 +202,4 @@ if __name__ == "__main__":
         for (src, tgt), total_weight in network_edges.items():
             writer.writerow([src, tgt, total_weight])
             
-    print("🏆 Done! Safe Pipeline execution complete with massive blacklist and precise output routing.")
-    print(f"Cleaned map written to: {OUTPUT_MAP}")
-    print(f"Cleaned network written to: {OUTPUT_NETWORK}")
+    print("🏆 Pipeline complete! Expanded prefix arrays optimized successfully.")
