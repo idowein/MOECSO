@@ -2,8 +2,8 @@ import csv
 from collections import defaultdict
 
 # --- CONFIGURATION ---
-INPUT_MAP = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\raw data\map.txt"
-INPUT_NETWORK = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\raw data\network.txt"
+INPUT_MAP = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\clean data\map.txt"
+INPUT_NETWORK = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\clean data\network.txt"
 
 # The output file that will contain the full list
 OUTPUT_CSV = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\raw data\word frequencies.csv"
