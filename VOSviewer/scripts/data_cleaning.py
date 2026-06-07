@@ -3,11 +3,11 @@ import spacy
 from collections import defaultdict
 
 # --- CONFIGURATION PATHS ---
-INPUT_MAP = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\raw data\map.txt"
-INPUT_NETWORK = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\raw data\network.txt"
+INPUT_MAP = r"C:\Users\ed2832\Downloads\MOECSO\VOSviewer\raw data\map.txt"
+INPUT_NETWORK = r"C:\Users\ed2832\Downloads\MOECSO\VOSviewer\raw data\network.txt"
 
-OUTPUT_MAP = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\clean data\map.txt"
-OUTPUT_NETWORK = r"C:\Users\ed2832\Downloads\projects\MOECSO\VOSviewer\clean data\network.txt"
+OUTPUT_MAP = r"C:\Users\ed2832\Downloads\MOECSO\VOSviewer\clean data\map.txt"
+OUTPUT_NETWORK = r"C:\Users\ed2832\Downloads\MOECSO\VOSviewer\clean data\network.txt"
 
 # --- BLACKLIST: Non-thematic, administrative, and generic Hebrew noise words ---
 WORDS_TO_REMOVE = {
