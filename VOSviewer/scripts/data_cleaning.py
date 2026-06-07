@@ -165,10 +165,10 @@ if __name__ == "__main__":
     old_id_to_new_id = {}
     removed_ids = set()
 
-    print("⚡ Tokenizing and filtering low-degree terms (< 2 intersections)...")
+    print("⚡ Tokenizing and filtering low-degree terms (< 5 intersections)...")
     for old_id, label in old_id_to_label.items():
-        # FILTER A: Drop terms with less than 2 distinct network edge intersections
-        if token_occurrence_count[old_id] < 2:
+        # FILTER A: Drop terms with less than 5 distinct network edge intersections
+        if token_occurrence_count[old_id] < 5:
             removed_ids.add(old_id)
             continue
 
