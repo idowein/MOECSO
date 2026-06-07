@@ -78,43 +78,51 @@ WORDS_TO_REMOVE = {
     "סוכות", "חגים", "חג", "תשפ\"ו", "תשפ\"ה", "תשפ\"ד", "תשפ\"ג", "תשפ\"ב", "תשפ\"א", "תש\"ו", "תש\"ה", 
     "תש\"ד", "2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027", "ישראל", "בישראל", "משרד", 
     "המשרד", "משרדים", "לשכה", "הלשכה", "מדען", "ראשי", "המדען", "הראשי", "הוראה", "למידה", "לימוד", 
-    "חינוך", "החינוך", "מערכת", "המערכת", "פרופ", "ופרופ", "לשכת", "המדענית", "מדענית"
+    "חינוך", "החינוך", "מערכת", "המערכת", "פרופ", "ופרופ", "לשכת", "המדענית", "מדענית",
+    
+    # Custom project terms added for filtration
+    "חוסן", "נפשי", "החוסן", "הנפשי"
 }
 
-# --- CONSOLIDATION: Unifying split words into a single meaningful phrase token ---
-PHRASE_CONSOLIDATION = {
+# --- BASE PHRASE CONSOLIDATION ---
+BASE_PHRASE_CONSOLIDATION = {
     "בית": "בית_ספר", "ספר": "בית_ספר", "בתי": "בית_ספר", "ספרים": "בית_ספר", "הספר": "בית_ספר",
     "חרבות": "חרבות_ברזל", "ברזל": "חרבות_ברזל",
     "גמישות": "גמישות_פדגוגית", "פדגוגית": "גמישות_פדגוגית", "גפן": "גמישות_פדגוגית", "גפ\"ן": "גמישות_פדגוגית",
     "גני": "גני_ילדים", "ילדים": "גני_ילדים",
-    "עובדי": "עובדי_הוראה", "מגפה": "מגפת_הקורונה", "קורונה": "מגפת_הקורונה", "מגפה": "מגפת הקורונה", "הקורונה":"מגפת הקורונה"
+    "עובדי": "עובדי_הוראה",
+    "מוסד": "מוסד_חינוכי", "מוסדות": "מוסד_חינוכי", "המוסד": "מוסד_חינוכי", "המוסדות": "מוסד_חינוכי"
 }
 
 def expand_blacklist_with_prefixes(base_blacklist):
-    """
-    Dynamically expands the words blacklist by prepending common Hebrew preposition 
-    and conjunction prefixes (ו, מ, ה, ב, ל, כ, וה, וב, ול, ומ) to each word.
-    """
+    """Adds common Hebrew single-letter prefixes to the words removal list."""
     expanded_set = set(base_blacklist)
-    prefixes = ["ו", "מ", "ה", "ב", "ל", "כ", "וה", "وب", "ול", "ומ"]
-    
+    prefixes = ["ו", "מ", "ה", "ב", "ל", "כ", "וה", "וב", "ול", "ומ"]
     for word in base_blacklist:
         for prefix in prefixes:
             expanded_set.add(prefix + word)
-            
     return expanded_set
+
+def expand_phrases_with_prefixes(base_phrases):
+    """Dynamically generates Hebrew grammatical prefix permutations for key phrases."""
+    expanded_dict = dict(base_phrases)
+    prefixes = ["ו", "מ", "ה", "ב", "ל", "כ", "וה", "וב", "ול", "ומ", "בב", "מה"]
+    for word, target_token in base_phrases.items():
+        for prefix in prefixes:
+            expanded_dict[prefix + word] = target_token
+    return expanded_dict
 
 if __name__ == "__main__":
     print("🧠 Loading Built-in Blank Hebrew spaCy Tokenizer...")
     nlp = spacy.blank("he")
 
-    # Expand the blacklist to automatically catch all prefix permutations
-    print("🔄 Dynamically expanding blacklist prefixes...")
+    print("🔄 Dynamically expanding blacklist and phrase map prefixes...")
     FINAL_WORDS_TO_REMOVE = expand_blacklist_with_prefixes(WORDS_TO_REMOVE)
-    print(f"📈 Blacklist size expanded from {len(WORDS_TO_REMOVE)} to {len(FINAL_WORDS_TO_REMOVE)} variations.")
+    FINAL_PHRASE_CONSOLIDATION = expand_phrases_with_prefixes(BASE_PHRASE_CONSOLIDATION)
 
     old_id_to_label = {}
     articles_metadata = []
+    publication_ids = set()
     
     # Step 1: Read the source map file containing all text nodes
     print("📂 Reading source mapping structure...")
@@ -125,13 +133,31 @@ if __name__ == "__main__":
             if not row: continue
             node_id, label, url, desc = row[0], row[1], row[2], row[3]
             
-            # Isolate publication rows to pass them through untouched
             if "Scraped Publication" in desc or url.startswith("http"):
                 articles_metadata.append(row)
+                publication_ids.add(node_id)
             else:
                 old_id_to_label[node_id] = label
 
-    # Map for tracking output labels and computing aggregated Node IDs
+    # Step 2: Pre-calculate the degree/intersection frequency of each old token in the network
+    print("🔢 Pre-calculating connection intersections from raw network...")
+    token_occurrence_count = defaultdict(int)
+    raw_edges_store = []
+
+    with open(INPUT_NETWORK, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter='\t')
+        for row in reader:
+            if not row: continue
+            src, tgt, weight = row[0], row[1], int(row[2])
+            raw_edges_store.append((src, tgt, weight))
+            
+            # Count occurrences only for term nodes, exclude publications from frequency decay
+            if src not in publication_ids:
+                token_occurrence_count[src] += 1
+            if tgt not in publication_ids:
+                token_occurrence_count[tgt] += 1
+
+    # Step 3: Map labels into standardized tokens while dropping low frequency ones
     label_to_new_id = {}
     new_map_rows = [header] + articles_metadata
     next_node_id = len(articles_metadata) + 1
@@ -139,27 +165,31 @@ if __name__ == "__main__":
     old_id_to_new_id = {}
     removed_ids = set()
 
-    print("⚡ Tokenizing and filtering terms via standard spaCy pipeline...")
+    print("⚡ Tokenizing and filtering low-degree terms (< 2 intersections)...")
     for old_id, label in old_id_to_label.items():
-        # A) Pre-filter using the newly expanded prefix-complete blacklist
+        # FILTER A: Drop terms with less than 2 distinct network edge intersections
+        if token_occurrence_count[old_id] < 2:
+            removed_ids.add(old_id)
+            continue
+
+        # FILTER B: Pre-filter using the prefix-complete blacklist
         if label in FINAL_WORDS_TO_REMOVE or len(label) <= 1:
             removed_ids.add(old_id)
             continue
 
-        # B) Handle hardcoded multi-word structures
-        if label in PHRASE_CONSOLIDATION:
-            final_label = PHRASE_CONSOLIDATION[label]
+        # TRANSFORMATION: Match against phrase configurations
+        if label in FINAL_PHRASE_CONSOLIDATION:
+            final_label = FINAL_PHRASE_CONSOLIDATION[label]
         else:
-            # C) Rely strictly on the model tokenizer native text output form
             doc = nlp(label)
             final_label = doc[0].text.strip() if doc else label
 
-        # D) Secondary check to filter out tokenized outputs hitting the expanded blacklist
+        # FILTER C: Secondary check against expanded noise sets
         if final_label in FINAL_WORDS_TO_REMOVE or len(final_label) <= 1:
             removed_ids.add(old_id)
             continue
 
-        # Build structural re-indexing records
+        # Re-index remaining qualified tokens
         if final_label not in label_to_new_id:
             label_to_new_id[final_label] = str(next_node_id)
             new_map_rows.append([str(next_node_id), final_label, "", "Cleaned NLP Token"])
@@ -167,31 +197,25 @@ if __name__ == "__main__":
             
         old_id_to_new_id[old_id] = label_to_new_id[final_label]
 
-    print(f"📉 Filtered out {len(removed_ids)} nodes using the expanded tokenizer pipelines.")
+    print(f"📉 Filtered out {len(removed_ids)} nodes due to noise or insufficient intersections (<2).")
 
-    # Step 2: Read old network file and sum edge connections over the new targets
+    # Step 4: Rebuild and aggregate graph edge connections
     print("📊 Rebuilding and aggregating graph edge connections...")
     network_edges = defaultdict(int)
     
-    with open(INPUT_NETWORK, 'r', encoding='utf-8') as f:
-        reader = csv.reader(f, delimiter='\t')
-        for row in reader:
-            if not row: continue
-            src, tgt, weight = row[0], row[1], int(row[2])
+    for src, tgt, weight in raw_edges_store:
+        if src in removed_ids or tgt in removed_ids:
+            continue
             
-            if src in removed_ids or tgt in removed_ids:
-                continue
-                
-            new_src = old_id_to_new_id.get(src, src)
-            new_tgt = old_id_to_new_id.get(tgt, tgt)
+        new_src = old_id_to_new_id.get(src, src)
+        new_tgt = old_id_to_new_id.get(tgt, tgt)
+        
+        if new_src == new_tgt:
+            continue
             
-            # Filter structural self-loops after collapse
-            if new_src == new_tgt:
-                continue
-                
-            network_edges[(new_src, new_tgt)] += weight
+        network_edges[(new_src, new_tgt)] += weight
 
-    # Step 3: Stream and write tab-separated datasets to final clean destinations
+    # Step 5: Save outputs to targeted clean storage locations
     print("💾 Saving clean outputs for VOSviewer ingestion...")
     with open(OUTPUT_MAP, 'w', newline='', encoding='utf-8-sig') as f:
         writer = csv.writer(f, delimiter='\t')
@@ -202,4 +226,4 @@ if __name__ == "__main__":
         for (src, tgt), total_weight in network_edges.items():
             writer.writerow([src, tgt, total_weight])
             
-    print("🏆 Pipeline complete! Expanded prefix arrays optimized successfully.")
+    print("🏆 Pipeline complete! Low-frequency tokens dropped successfully.")
