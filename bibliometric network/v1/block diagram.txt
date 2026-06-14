@@ -1,0 +1,50 @@
+[Raw PDF Files / Parsing CSV Table]
+                                   │
+                                   ▼
+     ┌───────────────────────────────────────────────────────────┐
+     │ 1. Text Extraction & Standardization                      │
+     │    • Method: Loop through directory using PyPDF2 or       │
+     │      pdfplumber to extract raw text strings.              │
+     │    • Formatting: Use Regex (re.sub) to strip noise and    │
+     │      standardize punctuation (e.g., dual quotes).         │
+     └───────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+     ┌───────────────────────────────────────────────────────────┐
+     │ 2. Morphological Analysis                                 │
+     │    • Method: Process text strings locally via spaCy / BERT / AlephBERT / RoBERT using │
+     │      a pre-trained Hebrew pipeline (he_core_news_sm).     │
+     │    • Mechanics: Strip prefix conjunctions and prepositions│
+     │      (ו,מ,ה,ב,ל,כ) and resolve tokens to their dictionary │
+     │      base forms (Lemmatization).                          │
+     └───────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+     ┌───────────────────────────────────────────────────────────┐
+     │ 3. POS Tagging & Template Filtering                       │
+     │    • Method: Inspect the built-in grammatical tags using  │
+     │      `token.pos_` on CPU with zero training required.     │
+     │    • Rule-set: Apply a sliding window to capture adjacent │
+     │      tokens matching NOUN+ADJ or NOUN+NOUN schemas.       │
+     └───────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+     ┌───────────────────────────────────────────────────────────┐
+     │ 4. Token Joining & Normalization                          │
+     │    • Method: Concatenate the filtered lemma pairs with an │
+     │      underscore separator via f-strings (f"{L1}_{L2}").   │
+     │    • Mechanics: Automatically strip definite articles (ה)  │
+     │      from the second token to avoid duplicate nodes.      │
+     └───────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+     ┌───────────────────────────────────────────────────────────┐
+     │ 5. Statistical Weighting (TF-IDF)                         │
+     │    • Method: Feed the unified compound tokens into        │
+     │      scikit-learn's `TfidfVectorizer` pipeline.           │
+     │    • Math: Penalize generic syntax while highlighting     │
+     │      domain-specific phrase clusters.                     │
+     └───────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+                [Ranked Top Terms for VOSviewer Import]
