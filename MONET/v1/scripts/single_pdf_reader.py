@@ -24,8 +24,6 @@ def extract_pdf_words_to_xl(input_path):
         reader = PdfReader(input_path)
         data_rows = []
 
-        data_rows.append({basename:input_path}) # 2nd row in the table is the path
-
         for page_index, page in enumerate(reader.pages):
             page_text = page.extract_text()
 
@@ -36,8 +34,10 @@ def extract_pdf_words_to_xl(input_path):
 
                 for word in words:
                     data_rows.append({
-                        basename: word,
-                    })
+                                    "file name":basename,
+                                    "word": word, 
+                                    "path": input_path
+                                    }) 
 
         df = pd.DataFrame(data_rows)
         # Export the DataFrame directly into a native Excel file
