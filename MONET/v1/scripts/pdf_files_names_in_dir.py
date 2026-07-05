@@ -3,11 +3,17 @@ import pandas as pd
 import os
 
 folder_path = Path("Z:\DATA\מדען ראשי")
+ignored_folders = {"תיקיות אישיות - עובדים", "ספריה סרוקה - קלואי", "גרפיקה לשכת המדען הראשי", "ניהול הלשכה"}
+
 xl_path = r"C:\Users\ed2832\Downloads\MOECSO\MONET\v1\raw data\filenames_paths.xlsx"
 pdf_number = 0
 data_rows = []
 
 for path in folder_path.rglob("*.pdf"):
+
+    if set(path.parts).intersection(ignored_folders): # skip ignored files
+        continue
+
     basename = os.path.basename(path)
     print(basename)
     pdf_number += 1
