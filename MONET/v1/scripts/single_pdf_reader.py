@@ -4,6 +4,7 @@ import pandas as pd
 from pypdf import PdfReader
 
 input_path = r"Z:\DATA\מדען ראשי\קולות קוראים 2026\חוסרי מורי STEM\קול קורא\הקול קורא למחקר - הון אנושי בתחומי ה  STEM במערכת החינוך.pdf"
+xl_path = r"C:\Users\ed2832\Downloads\MOECSO\MONET\v1\raw data\corpus.xlsx"
 
 def extract_pdf_words_to_xl(input_path):
     """
@@ -18,6 +19,36 @@ def extract_pdf_words_to_xl(input_path):
 
     basename = os.path.basename(input_path)
     print(f"Start to process {basename}")
+
+    try:
+        reader = PdfReader(input_path)
+        data_rows = []
+
+        data_rows.append({basename:input_path}) # 2nd row in the table is the path
+
+        for page_index, page in enumerate(reader.pages):
+            page_text = page.extract_text()
+
+            if page_text:
+                # Regular Expression to match only Hebrew and English letters, completely skipping numbers
+                # The re.UNICODE flag ensures Hebrew characters are processed properly
+                words = re.findall(r'[a-zA-Zא-ת]+', page_text, flags=re.UNICODE)
+
+                for word in words:
+                    data_rows.append({
+                        basename: word,
+                    })
+
+        df = pd.DataFrame(data_rows)
+        # Export the DataFrame directly into a native Excel file
+        # index=False prevents Pandas from adding an extra unnamed column for row numbers
+        df.to_excel(xl_path, index=False)
+
+        print(f"Success! Total parsed pages: {len(reader.pages)}")
+        print(f"Extracted {len(df)} words directly into Excel: '{xl_path}'")
+        
+    except Exception as e:
+        print(f"An error occurred during execution: {e}")
 
 if __name__ == "__main__":
     extract_pdf_words_to_xl(input_path)
