@@ -1,7 +1,10 @@
-# החסם של תיקיית ה-PDF-ים המקומית
+# PyCharm project configuration directory
+.idea/
+
+# Local PDF reports directory
 final reports 17.05.2026/
 
-# חסימת תיקיות הבנייה האוטומטיות של PyInstaller שאין צורך להעלות לגיט
+# PyInstaller build artifacts
 build/
 dist/
 *.spec
