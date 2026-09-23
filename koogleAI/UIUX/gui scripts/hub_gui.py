@@ -13,7 +13,7 @@ Requires: pillow (for the logo image)
     pip install pillow
 
 Package as a standalone .exe later the same way as budget_gui.py:
-    pyinstaller --onefile --windowed --name KoogleSuite hub_gui.py
+    pyinstaller --onefile --windowed --name koogleAI hub_gui.py
 """
 
 from __future__ import annotations
@@ -29,15 +29,18 @@ from PIL import Image, ImageTk
 # ---------------------------------------------------------------------------
 # Config - edit these for your machine
 # ---------------------------------------------------------------------------
-LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\UIUX\logos\koogle_logo_beige_bg.png")
+LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\logos\koogle_logo_beige_bg.png")
 
 # Where budget_gui.py lives when running this hub from source (python hub_gui.py).
-BUDGET_TOOL_SCRIPT = Path(__file__).parent / "budget_gui.py"
+BUDGET_TOOL_SCRIPT = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\gui scripts\budget_gui.py")
 
 # Where the PACKAGED budget estimator .exe lives, for when THIS hub is itself
-# packaged into an .exe. Point this at whatever you named it when you ran
-# PyInstaller for budget_gui.py (see the build command in that file's docstring).
-BUDGET_TOOL_EXE = Path(__file__).parent / "BudgetEstimatorV2.exe"
+# packaged into an .exe. This must be a full path to the .exe FILE itself
+# (not just its folder) - point it at wherever you put BudgetEstimatorV2.exe
+# after building it (see budget_gui.py's docstring for that build command).
+# The line below assumes you'll drop it in the same "gui scripts" folder as
+# this hub - change it if you put it somewhere else.
+BUDGET_TOOL_EXE = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\gui scripts\BudgetEstimatorV2.exe")
 
 # True only inside a PyInstaller-built .exe - sys.executable then points at
 # THIS exe, not at a Python interpreter, so it can't be used to run a .py file.

@@ -59,12 +59,12 @@ import mord  # noqa: F401
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-BUNDLE_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\budget_estimation\budget_model_bundle.joblib")
+BUNDLE_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\budget_estimation\budget_model_bundle.joblib")
 ICON_FILENAME = "icon.ico"   # put your chosen picture here, converted to .ico (see convert_to_ico.py)
 
 # Header logo shown at the top of the window - path to the image with the
 # background already matched to GUI_BG (see koogle_glasses_gray_bg.png).
-HEADER_LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\UIUX\logos\koogle_glasses_gray_bg.png")
+HEADER_LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\logos\koogle_glasses_gray_bg.png")
 HEADER_LOGO_SIZE = 96  # px, square thumbnail
 
 # Explicit background color for the whole window, so it matches the logo's
