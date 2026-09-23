@@ -22,14 +22,12 @@ Run:
     pip install pillow
     python budget_gui.py
 
-Package as a standalone .exe (once you're happy with it):
-    pip install pyinstaller
-    pyinstaller --onefile --windowed --icon=icon.ico --add-data "icon.ico;." ^
-        --collect-all sklearn --collect-all mord --collect-all scipy ^
-        --name BudgetEstimator budget_gui.py
-    -> dist/BudgetEstimator.exe
-    (bundle budget_model_bundle.joblib in the same folder as the exe, or see
-    the --add-data note near the bottom of this file)
+Package as a standalone .exe: use build_all.py (in the same folder as this
+script), or run PyInstaller directly - see its docstring. The finished .exe
+can then be moved anywhere (a network drive, another PC, ...): it always
+looks for budget_model_bundle.joblib and koogle_glasses_gray_bg.png right
+beside itself first, so just keep those two files in the same folder as the
+exe and it's fully self-contained.
 
     Note: --collect-all sklearn/mord/scipy is required even though this
     script never imports them directly. joblib.load() has to reconstruct the
@@ -56,15 +54,64 @@ from PIL import Image, ImageTk
 import sklearn  # noqa: F401
 import mord  # noqa: F401
 
+
+# The folder THIS file (or, if frozen, this .exe) actually sits in right
+# now - wherever that is. Everything this app needs (the model bundle, the
+# header logo) is looked up here FIRST. That means you can move
+# BudgetEstimatorV2.exe anywhere (a network drive, another PC, a USB stick,
+# ...) as long as you bring its data files along with it, and it keeps
+# working, with no dependency on a fixed/derived MOECSO path.
+APP_DIR = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
+
+
+def find_moecso_dir() -> Path | None:
+    """Best-effort only: locate the MOECSO project folder starting from
+    APP_DIR, checking at every level going up whether THIS folder is named
+    "MOECSO" or a "MOECSO" folder sits right next to it. Returns None
+    (never raises) if it can't be found - this is only a fallback for
+    running from source during development, never something a deployed
+    .exe should be forced to depend on."""
+    for folder in [APP_DIR] + list(APP_DIR.parents):
+        if folder.name == "MOECSO":
+            return folder
+        sibling = folder / "MOECSO"
+        if sibling.is_dir():
+            return sibling
+    return None
+
+
+MOECSO_DIR = find_moecso_dir()
+
+
+def resolve_asset(filename: str, moecso_subpath: tuple[str, ...]) -> Path:
+    """Look for `filename` right beside this script/exe first - the
+    simplest deployment: copy the exe + its data files into one folder,
+    anywhere you like, and it's fully self-contained. Falls back to the
+    fixed location inside the MOECSO project structure (if MOECSO could be
+    found at all) for running from source."""
+    beside = APP_DIR / filename
+    if beside.exists():
+        return beside
+    if MOECSO_DIR is not None:
+        return MOECSO_DIR.joinpath(*moecso_subpath)
+    return beside  # doesn't exist either, but callers degrade gracefully
+
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
-BUNDLE_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\budget_estimation\budget_model_bundle.joblib")
+BUNDLE_PATH = resolve_asset(
+    "budget_model_bundle.joblib",
+    ("koogleAI", "budget_estimation", "budget_model_bundle.joblib"),
+)
 ICON_FILENAME = "icon.ico"   # put your chosen picture here, converted to .ico (see convert_to_ico.py)
 
 # Header logo shown at the top of the window - path to the image with the
 # background already matched to GUI_BG (see koogle_glasses_gray_bg.png).
-HEADER_LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\logos\koogle_glasses_gray_bg.png")
+HEADER_LOGO_PATH = resolve_asset(
+    "koogle_glasses_gray_bg.png",
+    ("koogleAI", "UIUX", "logos", "koogle_glasses_gray_bg.png"),
+)
 HEADER_LOGO_SIZE = 96  # px, square thumbnail
 
 # Explicit background color for the whole window, so it matches the logo's

@@ -12,8 +12,12 @@ Run:
 Requires: pillow (for the logo image)
     pip install pillow
 
-Package as a standalone .exe later the same way as budget_gui.py:
-    pyinstaller --onefile --windowed --name koogleAI hub_gui.py
+Package as a standalone .exe: use build_all.py (in this same folder), which
+builds this AND budget_gui.py together. The two .exe files can then be
+moved together anywhere you like (this hub always looks for
+BudgetEstimatorV2.exe right beside itself, never via a fixed path) - just
+keep them, and ideally koogle_logo_beige_bg.png + budget_model_bundle.joblib,
+in the same folder as each other.
 """
 
 from __future__ import annotations
@@ -26,25 +30,68 @@ from tkinter import messagebox
 
 from PIL import Image, ImageTk
 
-# ---------------------------------------------------------------------------
-# Config - edit these for your machine
-# ---------------------------------------------------------------------------
-LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\logos\koogle_logo_beige_bg.png")
-
-# Where budget_gui.py lives when running this hub from source (python hub_gui.py).
-BUDGET_TOOL_SCRIPT = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\gui scripts\budget_gui.py")
-
-# Where the PACKAGED budget estimator .exe lives, for when THIS hub is itself
-# packaged into an .exe. This must be a full path to the .exe FILE itself
-# (not just its folder) - point it at wherever you put BudgetEstimatorV2.exe
-# after building it (see budget_gui.py's docstring for that build command).
-# The line below assumes you'll drop it in the same "gui scripts" folder as
-# this hub - change it if you put it somewhere else.
-BUDGET_TOOL_EXE = Path(r"C:\Users\idowe\MyProjects\MOECSO\koogleAI\UIUX\gui scripts\BudgetEstimatorV2.exe")
-
 # True only inside a PyInstaller-built .exe - sys.executable then points at
 # THIS exe, not at a Python interpreter, so it can't be used to run a .py file.
 IS_FROZEN = getattr(sys, "frozen", False)
+
+# The folder THIS file (or, if frozen, this .exe) actually sits in right
+# now - wherever that is. Both .exe files are always built/copied together
+# as a pair (see build_all.py), so the budget-tool exe is looked up here
+# FIRST, beside this one - never via a fixed/derived MOECSO path. That means
+# you can move both .exe files anywhere (a network drive, another PC, a USB
+# stick, ...) as long as they stay together, and it keeps working.
+APP_DIR = Path(sys.executable if IS_FROZEN else __file__).resolve().parent
+
+
+def find_moecso_dir() -> Path | None:
+    """Best-effort only: locate the MOECSO project folder starting from
+    APP_DIR, checking at every level going up whether THIS folder is named
+    "MOECSO" or a "MOECSO" folder sits right next to it. Returns None
+    (never raises) if it can't be found - the app should still run using
+    whatever it can find beside itself; MOECSO is only a fallback for
+    optional assets (the logo) when running from source during development,
+    not something a deployed .exe should ever be forced to depend on."""
+    for folder in [APP_DIR] + list(APP_DIR.parents):
+        if folder.name == "MOECSO":
+            return folder
+        sibling = folder / "MOECSO"
+        if sibling.is_dir():
+            return sibling
+    return None
+
+
+MOECSO_DIR = find_moecso_dir()
+
+
+def resolve_asset(filename: str, moecso_subpath: tuple[str, ...]) -> Path:
+    """Look for `filename` right beside this script/exe first - the
+    simplest deployment: copy the exe + its image + BudgetEstimatorV2.exe
+    into one folder, anywhere you like, and it's fully self-contained.
+    Falls back to the fixed location inside the MOECSO project structure
+    (if MOECSO could be found at all) for running from source."""
+    beside = APP_DIR / filename
+    if beside.exists():
+        return beside
+    if MOECSO_DIR is not None:
+        return MOECSO_DIR.joinpath(*moecso_subpath)
+    return beside  # doesn't exist either, but _load_logo() degrades gracefully
+
+
+# ---------------------------------------------------------------------------
+# Config
+# ---------------------------------------------------------------------------
+LOGO_PATH = resolve_asset(
+    "koogle_logo_beige_bg.png",
+    ("koogleAI", "UIUX", "logos", "koogle_logo_beige_bg.png"),
+)
+
+# Where budget_gui.py lives when running this hub from source (python hub_gui.py).
+BUDGET_TOOL_SCRIPT = APP_DIR / "budget_gui.py"
+
+# Where the PACKAGED budget estimator .exe lives, for when THIS hub is
+# itself packaged into an .exe. ALWAYS looked up beside this exe - the two
+# exes travel together as a pair, wherever you put them.
+BUDGET_TOOL_EXE = APP_DIR / "BudgetEstimatorV2.exe"
 
 # ---------------------------------------------------------------------------
 # Palette - lifted from the Koogle logo (warm orange/red/cream), per the mockup
