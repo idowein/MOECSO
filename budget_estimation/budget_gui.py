@@ -10,15 +10,32 @@ statistical pattern between proposed methodology and historical call pricing
 on a small dataset (see the notebook, section 9). Treat the output as a
 reference range for setting a new call's budget, not as ground truth.
 
+Custom icon: put an icon.ico file next to this script (see convert_to_ico.py
+for turning any image you choose into a proper .ico) and it is used both for
+the running window (taskbar) and, once packaged, for the .exe file itself.
+
+Header logo: HEADER_LOGO_PATH below points to an image shown at the top of
+the window. Its own background should already match GUI_BG ("#F0F0F0") so it
+blends in instead of showing a white square - see koogle_glasses_gray_bg.png.
+
 Run:
+    pip install pillow
     python budget_gui.py
 
 Package as a standalone .exe (once you're happy with it):
     pip install pyinstaller
-    pyinstaller --onefile --windowed --name BudgetEstimator budget_gui.py
+    pyinstaller --onefile --windowed --icon=icon.ico --add-data "icon.ico;." ^
+        --collect-all sklearn --collect-all mord --collect-all scipy ^
+        --name BudgetEstimator budget_gui.py
     -> dist/BudgetEstimator.exe
     (bundle budget_model_bundle.joblib in the same folder as the exe, or see
     the --add-data note near the bottom of this file)
+
+    Note: --collect-all sklearn/mord/scipy is required even though this
+    script never imports them directly. joblib.load() has to reconstruct the
+    saved Pipeline/LogisticAT objects at runtime, which needs those packages
+    present - but PyInstaller only bundles what it sees imported in the code,
+    so without --collect-all the .exe fails with "No module named 'sklearn'".
 """
 
 from __future__ import annotations
@@ -30,11 +47,37 @@ from tkinter import ttk, messagebox
 
 import joblib
 import pandas as pd
+from PIL import Image, ImageTk
+
+# sklearn/mord are never called directly in this file - joblib.load() needs
+# them internally to unpickle the trained Pipeline/LogisticAT objects, and
+# importing them here (in addition to --collect-all below) helps PyInstaller's
+# static analysis find them.
+import sklearn  # noqa: F401
+import mord  # noqa: F401
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 BUNDLE_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\budget_estimation\budget_model_bundle.joblib")
+ICON_FILENAME = "icon.ico"   # put your chosen picture here, converted to .ico (see convert_to_ico.py)
+
+# Header logo shown at the top of the window - path to the image with the
+# background already matched to GUI_BG (see koogle_glasses_gray_bg.png).
+HEADER_LOGO_PATH = Path(r"C:\Users\idowe\MyProjects\MOECSO\UIUX\logos\koogle_glasses_gray_bg.png")
+HEADER_LOGO_SIZE = 96  # px, square thumbnail
+
+# Explicit background color for the whole window, so it matches the logo's
+# own background exactly instead of relying on whatever gray the OS theme
+# happens to use.
+GUI_BG = "#F0F0F0"
+
+
+def resource_path(filename: str) -> Path:
+    """Resolve a file next to the script when run normally, or next to the
+    bundled data when run from a PyInstaller --onefile .exe."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return base / filename
 
 # Human-readable labels for the raw column names, since the model's feature
 # names (e.g. "duration_months_bin") aren't meant for an end user to read.
@@ -61,20 +104,51 @@ class BudgetEstimatorApp(tk.Tk):
         self.nominal_categories = bundle["nominal_categories"]
 
         self.title("Call for Proposals - Budget Tier Estimator")
-        self.geometry("560x640")
+        self.geometry("560x680")
         self.resizable(False, False)
+        self.configure(bg=GUI_BG)
+        self._set_window_icon()
 
         self.selections: dict[str, tk.StringVar] = {}
+        self._header_photo = None  # keep a reference, or Tkinter garbage-collects it
         self._build_layout()
+
+    # ------------------------------------------------------------------
+    def _set_window_icon(self):
+        icon_path = resource_path(ICON_FILENAME)
+        if not icon_path.exists():
+            return  # no custom icon provided - fall back to Tkinter's default
+        try:
+            self.iconbitmap(default=str(icon_path))   # .ico only, Windows
+        except tk.TclError:
+            pass  # e.g. a non-.ico file slipped in - keep the default icon rather than crash
+
+    # ------------------------------------------------------------------
+    def _add_header_logo(self):
+        """Show the header image centered at the top of the window, if it's
+        present at HEADER_LOGO_PATH. Silently skipped if missing/unreadable,
+        so a wrong path never crashes the app - it just shows no logo."""
+        if not HEADER_LOGO_PATH.exists():
+            return
+        try:
+            img = Image.open(HEADER_LOGO_PATH).convert("RGBA")
+            img.thumbnail((HEADER_LOGO_SIZE, HEADER_LOGO_SIZE), Image.LANCZOS)
+            self._header_photo = ImageTk.PhotoImage(img)
+        except Exception:
+            return
+        tk.Label(self, image=self._header_photo, bg=GUI_BG).pack(pady=(14, 2))
 
     # ------------------------------------------------------------------
     def _build_layout(self):
         pad = {"padx": 16, "pady": 6}
 
-        header = ttk.Label(
+        self._add_header_logo()
+
+        header = tk.Label(
             self,
             text="Estimate the budget tier for a new call for proposals",
             font=("Segoe UI", 13, "bold"),
+            bg=GUI_BG,
             wraplength=520,
         )
         header.pack(anchor="w", **pad)
