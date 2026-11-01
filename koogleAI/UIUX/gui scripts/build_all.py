@@ -27,6 +27,7 @@ Edit BUILDS below if you rename scripts, add --icon, change --name, etc.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -80,11 +81,46 @@ BUILD_CACHE_DIR = EXE_DIR / "_pyinstaller_build"
 # so the whole EXE_DIR folder is one self-contained, movable unit: copy it
 # (or the two .exe files + these) anywhere and it keeps working, with no
 # dependency on MOECSO_DIR at runtime.
+LOGOS_DIR = MOECSO_DIR / "koogleAI" / "UIUX" / "logos"
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+
+
+def find_image(stems: tuple[str, ...]) -> Path | None:
+    """Find a logo by name, whatever its extension (.png/.jpg/...), in the
+    gui scripts folder (where you run from) first, then the logos folder.
+    Uses the same names, in the same order, as resolve_asset() in hub_gui.py."""
+    for folder in (GUI_SCRIPTS_DIR, LOGOS_DIR):
+        for stem in stems:
+            for ext in IMAGE_EXTS:
+                candidate = folder / f"{stem}{ext}"
+                if candidate.is_file():
+                    return candidate
+    return None
+
+
+# The hub's two logos. They are embedded INSIDE koogleAI.exe (--add-data),
+# so the exe always has them, and also copied beside it below.
+KOOGLE_LOGO = find_image(("koogleAI_logo2", "koogle_logo_beige_bg"))
+CSO_LOGO = find_image(("chief-scientist-logo", "cso_logo"))
+HUB_LOGOS = [p for p in (KOOGLE_LOGO, CSO_LOGO) if p is not None]
+
 ASSETS_TO_COPY = [
     MOECSO_DIR / "koogleAI" / "budget_estimation" / "budget_model_bundle.joblib",
-    MOECSO_DIR / "koogleAI" / "UIUX" / "logos" / "koogle_glasses_gray_bg.png",
-    MOECSO_DIR / "koogleAI" / "UIUX" / "logos" / "koogle_logo_beige_bg.png",
+    LOGOS_DIR / "koogle_glasses_gray_bg.png",
+    LOGOS_DIR / "koogle_logo_beige_bg.png",
 ]
+for _logo in HUB_LOGOS:
+    if _logo not in ASSETS_TO_COPY:
+        ASSETS_TO_COPY.append(_logo)
+
+
+def add_data_args(paths: list[Path]) -> list[str]:
+    """--add-data SRC<sep>. for each file (absolute paths, because the .spec
+    file is written to BUILD_CACHE_DIR, not next to the sources)."""
+    args: list[str] = []
+    for p in paths:
+        args += ["--add-data", f"{p}{os.pathsep}."]
+    return args
 
 BUILDS = [
     {
@@ -110,6 +146,7 @@ BUILDS = [
             "--workpath", str(BUILD_CACHE_DIR),
             "--specpath", str(BUILD_CACHE_DIR),
             "--name", "koogleAI",
+            *add_data_args(HUB_LOGOS),
         ],
     },
 ]
@@ -179,6 +216,12 @@ def print_resolved_paths():
         script_path: Path = build["script"]
         mark = "[green]found[/green]" if script_path.exists() else "[red]MISSING[/red]"
         console.print(f"  {build['name']}: {script_path}  -  {mark}")
+    console.print("[bold]Hub logos[/bold] (looked for in GUI_SCRIPTS_DIR, then logos/):")
+    for label, path in (("Koogle logo", KOOGLE_LOGO), ("Chief Scientist logo", CSO_LOGO)):
+        if path is not None:
+            console.print(f"  {label}: {path}  -  [green]found[/green]")
+        else:
+            console.print(f"  {label}: [red]MISSING[/red] - the exe will show a text placeholder")
     console.print()
 
 

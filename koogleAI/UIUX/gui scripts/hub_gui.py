@@ -10,6 +10,12 @@ separate process:
                           (when packaged)
 The other two are "Coming soon" placeholders.
 
+Budget Estimation is a heavy exe (sklearn/scipy), so clicking it opens a
+loading window over the hub. It tracks the real launch (process started ->
+loading -> the estimator's window appears on screen) and closes as soon as
+the estimator is up. The bar paces itself by how long the estimator took
+last time on this PC (kept in %LOCALAPPDATA%\\KoogleSuite\\launch_times.json).
+
 koggle_search_engine.exe is large and is NOT kept in git - copy it by hand
 into the folder this hub runs from (add it to .gitignore).
 
@@ -28,10 +34,12 @@ Run:
 Requires: pillow
     pip install pillow
 
-Assets (looked up beside this script/exe first, then inside MOECSO):
-    koogle_logo_beige_bg.png   - Koogle logo (its beige background is removed
+Assets - any image extension (.png/.jpg/...). Looked up beside this
+script/exe, inside the exe bundle (build_all.py embeds them), then in
+MOECSO/koogleAI/UIUX/logos and MOECSO/koogleAI/UIUX/gui scripts:
+    koogleAI_logo2.*           - Koogle logo (its flat background is removed
                                  automatically so it sits on a white card)
-    cso_logo.png               - Chief Scientist Office logo
+    chief-scientist-logo.*     - Chief Scientist Office logo
     fonts/*.ttf  (optional)    - e.g. Rubik-Regular.ttf, Rubik-Medium.ttf,
                                  Rubik-SemiBold.ttf from Google Fonts. On
                                  Windows they are loaded privately (no install
@@ -45,7 +53,9 @@ the two logo PNGs and the fonts folder - in the same folder as each other.
 from __future__ import annotations
 
 import functools
+import json
 import math
+import os
 import subprocess
 import sys
 import threading
@@ -73,6 +83,16 @@ MIN_SPLASH_SECONDS = 1.6
 # How long the "All set!" state is shown before the launcher appears.
 READY_HOLD_MS = 900
 
+# Loading window shown while a heavy tool (the budget estimator) starts up.
+# It closes as soon as the tool's own window appears on screen.
+TOOL_READY_HOLD_MS = 700          # "Ready!" shown this long before closing
+TOOL_LAUNCH_TIMEOUT = 120.0       # give up waiting for the tool's window (s)
+DEFAULT_LAUNCH_SECONDS = 12.0     # first-run guess of how long a tool takes
+# Remembers how long each tool took to open last time, so the progress bar
+# paces itself realistically on this PC.
+LAUNCH_TIMES_FILE = (Path(os.environ.get("LOCALAPPDATA") or Path.home())
+                     / "KoogleSuite" / "launch_times.json")
+
 
 def find_moecso_dir() -> Path | None:
     """Best-effort only: locate the MOECSO project folder starting from
@@ -92,28 +112,36 @@ def find_moecso_dir() -> Path | None:
 MOECSO_DIR = find_moecso_dir()
 
 
-def resolve_asset(filename: str, moecso_subpath: tuple[str, ...]) -> Path:
-    """Look for `filename` beside this script/exe first; fall back to the
-    fixed location inside the MOECSO project structure."""
-    beside = APP_DIR / filename
-    if beside.exists():
-        return beside
+# Inside a PyInstaller --onefile exe, files added with --add-data are
+# unpacked here at runtime (build_all.py bundles both logos this way).
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
+
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+
+
+def resolve_asset(stems: tuple[str, ...]) -> Path | None:
+    """Find an image by name, whatever its extension (.png / .jpg / ...).
+    Looks, in order: beside this script/exe, inside the exe bundle, then
+    the MOECSO logos and gui-scripts folders. Returns None if not found -
+    the UI then shows a text placeholder instead of the logo."""
+    folders = [APP_DIR, BUNDLE_DIR]
     if MOECSO_DIR is not None:
-        return MOECSO_DIR.joinpath(*moecso_subpath)
-    return beside  # may not exist; the UI degrades gracefully
+        ui_dir = MOECSO_DIR / "koogleAI" / "UIUX"
+        folders += [ui_dir / "logos", ui_dir / "gui scripts"]
+    for folder in folders:
+        for stem in stems:
+            for ext in IMAGE_EXTS:
+                candidate = folder / f"{stem}{ext}"
+                if candidate.is_file():
+                    return candidate
+    return None
 
 
 # ---------------------------------------------------------------------------
-# Config
+# Config - file names WITHOUT extension; the first name found wins
 # ---------------------------------------------------------------------------
-LOGO_PATH = resolve_asset(
-    "koogleAI_logo2.png",
-    ("koogleAI", "UIUX", "logos", "koogleAI_logo2.png"),
-)
-CSO_LOGO_PATH = resolve_asset(
-    "chief-scientist-logo.png",
-    ("koogleAI", "UIUX", "logos", "chief-scientist-logo.jpg"),
-)
+LOGO_PATH = resolve_asset(("koogleAI_logo2", "koogle_logo_beige_bg"))
+CSO_LOGO_PATH = resolve_asset(("chief-scientist-logo", "cso_logo"))
 FONTS_DIR = APP_DIR / "fonts"
 
 BUDGET_TOOL_SCRIPT = APP_DIR / "budget_gui.py"
@@ -185,7 +213,10 @@ TOOLS = [
     {"icon": "database", "title": "Budget Estimation",
      "subtitle": "Estimate a call-for-proposals budget tier",
      "tile": "#FBD3B8", "stroke": "#9A4318", "active": True,
-     "launch": "budget", "theme": THEME_PEACH},
+     "launch": "budget", "theme": THEME_PEACH,
+     # heavy exe (sklearn/scipy) - show a loading window until it opens.
+     # Set "loading_window": True on any other tool to give it one too.
+     "loading_window": True, "loading_label": "Loading the estimator"},
     {"icon": "map", "title": "Knowledge Map",
      "subtitle": "Explore relationships between research topics",
      "tile": "#EEE7FA", "stroke": "#6F55B5", "active": False},
@@ -253,6 +284,72 @@ def round_window_corners(win: tk.Misc) -> None:
             hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(pref), ctypes.sizeof(pref))
     except Exception:
         pass
+
+
+def _process_tree(root_pid: int) -> set[int]:
+    """root_pid plus all its descendants (Windows). A PyInstaller --onefile
+    exe starts a child process that owns the real window, so the window's
+    PID is usually NOT the one Popen returned."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260)]
+
+    k32 = ctypes.windll.kernel32
+    k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snap = k32.CreateToolhelp32Snapshot(0x2, 0)  # TH32CS_SNAPPROCESS
+    if not snap or snap == wintypes.HANDLE(-1).value:
+        return {root_pid}
+    children: dict[int, list[int]] = {}
+    entry = PROCESSENTRY32W()
+    entry.dwSize = ctypes.sizeof(entry)
+    try:
+        ok = k32.Process32FirstW(snap, ctypes.byref(entry))
+        while ok:
+            children.setdefault(entry.th32ParentProcessID, []).append(entry.th32ProcessID)
+            ok = k32.Process32NextW(snap, ctypes.byref(entry))
+    finally:
+        k32.CloseHandle(snap)
+    tree, stack = {root_pid}, [root_pid]
+    while stack:
+        for child in children.get(stack.pop(), []):
+            if child not in tree:
+                tree.add(child)
+                stack.append(child)
+    return tree
+
+
+def process_has_visible_window(root_pid: int) -> bool | None:
+    """True once the process (or one of its children) shows a visible,
+    titled top-level window. None where this can't be checked (non-Windows)."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        pids = _process_tree(root_pid)
+        found = [False]
+        WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        def on_window(hwnd, _lparam):
+            if user32.IsWindowVisible(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0:
+                pid = wintypes.DWORD()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value in pids:
+                    found[0] = True
+                    return False  # stop enumerating
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(on_window), 0)
+        return found[0]
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +509,7 @@ def remove_flat_background(img: Image.Image, tolerance: int = 22) -> Image.Image
 def load_koogle_logo(max_px: int | None = None) -> Image.Image | None:
     """Koogle logo with its background removed, cropped to the artwork.
     max_px shrinks it first (fast path for the loading window)."""
-    if not LOGO_PATH.exists():
+    if LOGO_PATH is None:
         return None
     try:
         img = Image.open(LOGO_PATH).convert("RGBA")
@@ -428,7 +525,7 @@ def load_koogle_logo(max_px: int | None = None) -> Image.Image | None:
 
 
 def load_cso_logo() -> Image.Image | None:
-    if not CSO_LOGO_PATH.exists():
+    if CSO_LOGO_PATH is None:
         return None
     try:
         return Image.open(CSO_LOGO_PATH).convert("RGBA")
@@ -501,15 +598,27 @@ class SplashScreen:
         ("logos", "Logos", LILAC_SOFT, LILAC_PILL_TEXT),
         ("tools", "Tools", PEACH_SOFT, OPEN_TEXT),
     ]
+    TOOL_STEPS = [  # used while launching a tool
+        ("start", "Starting", SKY_CHIP_BG, SKY_CHIP_TEXT),
+        ("load", "Loading", LILAC_SOFT, LILAC_PILL_TEXT),
+        ("window", "Window", PEACH_SOFT, OPEN_TEXT),
+    ]
     # Logo "stage" (156 x 150) and the progress bar, in logical px
     STAGE_X, STAGE_Y = 162, 36
     BAR_X, BAR_Y, BAR_W, BAR_H = 80, 306, 320, 10
 
-    def __init__(self, root: tk.Misc, scale: float, fonts: FontKit, animate: bool = True):
+    def __init__(self, root: tk.Misc, scale: float, fonts: FontKit, animate: bool = True, *,
+                 title: str = "Koogle Suite", subtitle: str = "Getting your tools ready",
+                 status: str = "Starting up", steps: list | None = None,
+                 badge_icon: str | None = None,
+                 center_over: tuple[int, int, int, int] | None = None):
         self.root = root
         self.S = scale
         self.fonts = fonts
         self.animate = animate
+        self.steps = steps or self.STEPS
+        self._title_text, self._subtitle_text, self._status_text = title, subtitle, status
+        self.badge_icon = badge_icon  # tool icon shown on the logo card while loading
         p = self.px
 
         self.win = tk.Toplevel(root)
@@ -517,7 +626,13 @@ class SplashScreen:
         self.win.configure(bg=BG_MAIN)
         w, h = p(self.W), p(self.H)
         sw, sh = self.win.winfo_screenwidth(), self.win.winfo_screenheight()
-        self.win.geometry(f"{w}x{h}+{(sw - w) // 2}+{max(0, (sh - h) // 2 - p(20))}")
+        if center_over:  # (x, y, w, h) of a window to centre on
+            ox, oy, ow, oh = center_over
+            x = min(max(0, ox + (ow - w) // 2), max(0, sw - w))
+            y = min(max(0, oy + (oh - h) // 2), max(0, sh - h))
+        else:
+            x, y = (sw - w) // 2, max(0, (sh - h) // 2 - p(20))
+        self.win.geometry(f"{w}x{h}+{x}+{y}")
         try:
             self.win.attributes("-topmost", True)
         except tk.TclError:
@@ -530,7 +645,7 @@ class SplashScreen:
         self.target = 0.0      # where the bar is heading (0..100)
         self.creep_to = 0.0    # the bar drifts up to here while a step runs
         self.shown = 0.0       # what the bar currently displays
-        self.states = {key: "pending" for key, *_ in self.STEPS}
+        self.states = {key: "pending" for key, *_ in self.steps}
         self.ready_at: float | None = None
         self._refs: list = []  # keep PhotoImages alive
         self._sized: dict = {}  # PhotoImages for animated sizes
@@ -594,20 +709,24 @@ class SplashScreen:
         if logo is None:
             c.create_text(*self.card_center, text="Koogle", font=f(18, "semi"), fill=ACTIVE_SHADOW)
 
-        # check badge (pops in on "ready")
+        # badge on the card's corner: the tool's icon while loading (if any),
+        # replaced by a check mark that pops in on "ready"
         self.badge_center = self._stage(114 + 17, 108 + 17)
         self.badge = c.create_image(*self.badge_center, anchor="center", state="hidden")
+        if self.badge_icon:
+            self.c.itemconfig(self.badge, state="normal", image=self._sized_photo(
+                ("badge", self.badge_icon, p(42)), lambda: self._badge_image(p(42), self.badge_icon)))
 
         # title + subtitle
         cx = W // 2
-        self.title = c.create_text(cx, p(200), text="Koogle Suite", font=f(22, "semi"),
+        self.title = c.create_text(cx, p(200), text=self._title_text, font=f(22, "semi"),
                                    fill=INK, anchor="n")
-        self.subtitle = c.create_text(cx, p(230), text="Getting your tools ready",
+        self.subtitle = c.create_text(cx, p(230), text=self._subtitle_text,
                                       font=f(14), fill=MUTED, anchor="n")
 
         # status line: label + hopping dots, percentage on the right
         row_y = p(self.BAR_Y - 20)
-        self.status = c.create_text(p(self.BAR_X), row_y, text="Starting up",
+        self.status = c.create_text(p(self.BAR_X), row_y, text=self._status_text,
                                     font=f(13, "semi"), fill=INK, anchor="w")
         self.dots = []
         for color in (DOT_SKY, DOT_PEACH, DOT_LILAC):
@@ -691,7 +810,7 @@ class SplashScreen:
         c, p = self.c, self.px
         c.delete("chip")
         built = []
-        for key, label, bg, fg in self.STEPS:
+        for key, label, bg, fg in self.steps:
             img, w, text_x, color = self._chip_image(key, self.states[key], label, bg, fg)
             built.append((key, label, img, w, text_x, color))
         gap = p(8)
@@ -769,24 +888,26 @@ class SplashScreen:
 
         self._job = self.win.after(25, self._tick)
 
+    @staticmethod
+    def _badge_image(d: int, icon: str) -> Image.Image:
+        """Peach circle with a white ring and a line icon (check / tool icon)."""
+        ring = render_circle(d, BG_MAIN).copy()
+        inner_d = max(2, int(d * 34 / 42))
+        o = (d - inner_d) // 2
+        ring.alpha_composite(render_circle(inner_d, OPEN_BG), (o, o))
+        is_check = icon == "check"
+        ic_d = max(2, int(d * (18 if is_check else 20) / 42))
+        ring.alpha_composite(render_icon(icon, ic_d, OPEN_TEXT, stroke=2.8 if is_check else 2.2),
+                             ((d - ic_d) // 2, (d - ic_d) // 2))
+        return ring
+
     def _animate_ready(self, since: float, t: float):
         p = self.px
         x = min(1.0, since / 0.6) if self.animate else 1.0
         scale = (0.6 + 0.4 * ease_out_back(x)) if self.animate else 1.0
         d = max(4, int(p(42) * scale))
-
-        def badge():
-            ring = render_circle(d, BG_MAIN).copy()
-            inner_d = max(2, int(d * 34 / 42))
-            o = (d - inner_d) // 2
-            ring.alpha_composite(render_circle(inner_d, OPEN_BG), (o, o))
-            ic_d = max(2, int(d * 18 / 42))
-            ring.alpha_composite(render_icon("check", ic_d, OPEN_TEXT, stroke=2.8),
-                                 ((d - ic_d) // 2, (d - ic_d) // 2))
-            return ring
-
-        self.c.itemconfig(self.badge, image=self._sized_photo(("badge", d), badge),
-                          state="normal")
+        self.c.itemconfig(self.badge, state="normal", image=self._sized_photo(
+            ("badge", "check", d), lambda: self._badge_image(d, "check")))
         for item, size, color, delay in self.stars:
             s = (0.7 + 0.3 * wave(t - delay, 1.6)) if self.animate else 1.0
             sd = max(2, p(size * s))
@@ -795,10 +916,11 @@ class SplashScreen:
                                                       lambda: render_star(sd, color)))
 
     # ---------------- API used by the app ----------------
-    def set_step(self, key: str, label: str, start: float, end: float):
+    def set_step(self, key: str, label: str, start: float, end: float, creep: bool = True):
+        """creep=False: the bar only moves when set_target() is called."""
         self.states[key] = "active"
         self.target = max(self.target, start)
-        self.creep_to = max(self.target, end - 4)
+        self.creep_to = max(self.target, end - 4) if creep else self.target
         self.c.itemconfig(self.status, text=label)
         self._place_dots()
         self._draw_chips()
@@ -809,15 +931,20 @@ class SplashScreen:
         self.creep_to = self.target
         self._draw_chips()
 
+    def set_target(self, value: float):
+        """Move the bar toward `value` (never backwards)."""
+        self.target = max(self.target, min(100.0, value))
+        self.creep_to = max(self.creep_to, self.target)
+
     def progress_settled(self) -> bool:
         return self.shown >= self.target - 0.5
 
-    def show_ready(self):
+    def show_ready(self, title: str = "All set!", subtitle: str = "Opening Koogle Suite"):
         for key in self.states:
             self.states[key] = "done"
         self.target = self.creep_to = self.shown = 100.0
-        self.c.itemconfig(self.title, text="All set!")
-        self.c.itemconfig(self.subtitle, text="Opening Koogle Suite")
+        self.c.itemconfig(self.title, text=title)
+        self.c.itemconfig(self.subtitle, text=subtitle)
         self.c.itemconfig(self.status, text="Ready")
         for item in self.dots:
             self.c.itemconfig(item, state="hidden")
@@ -1265,10 +1392,14 @@ class KoogleSuiteHub(tk.Tk):
         launchers = {"budget": self._launch_budget_process,
                      "search": self._launch_search_engine}
         launch = launchers.get(tool.get("launch"))
-        if launch is None or not launch():
+        proc = launch() if launch else None
+        if proc is None:
             return
         self._opening.add(title)
         self._schedule_redraw()
+
+        if tool.get("loading_window") and self._start_tool_loading(tool, proc):
+            return  # the loading window clears the "Opening…" state when done
 
         def done():
             self._opening.discard(title)
@@ -1276,7 +1407,106 @@ class KoogleSuiteHub(tk.Tk):
 
         self.after(1800, done)
 
-    def _launch_search_engine(self) -> bool:
+    # ---------------- loading window while a tool starts ----------------
+    def _window_rect(self) -> tuple[int, int, int, int]:
+        return (self.winfo_rootx(), self.winfo_rooty(), self.winfo_width(), self.winfo_height())
+
+    @staticmethod
+    def _read_launch_times() -> dict:
+        try:
+            return json.loads(LAUNCH_TIMES_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+
+    def _expected_launch_seconds(self, key: str) -> float:
+        try:
+            return min(90.0, max(2.0, float(self._read_launch_times()[key])))
+        except Exception:
+            return DEFAULT_LAUNCH_SECONDS
+
+    def _remember_launch_seconds(self, key: str, seconds: float):
+        try:
+            times = self._read_launch_times()
+            old = times.get(key)
+            times[key] = round(seconds if old is None else 0.5 * float(old) + 0.5 * seconds, 2)
+            LAUNCH_TIMES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            LAUNCH_TIMES_FILE.write_text(json.dumps(times), encoding="utf-8")
+        except Exception:
+            pass  # remembering timings is a nicety, never an error
+
+    def _start_tool_loading(self, tool: dict, proc: subprocess.Popen) -> bool:
+        try:
+            splash = SplashScreen(
+                self, self.S, self.fonts, animate=animations_enabled(),
+                title=tool["title"], subtitle="Starting up — this can take a few seconds",
+                status="Starting", steps=SplashScreen.TOOL_STEPS,
+                badge_icon=tool["icon"], center_over=self._window_rect())
+        except Exception:
+            return False
+        splash.set_step("start", "Starting", 0, 8, creep=False)
+        state = {"tool": tool, "proc": proc, "splash": splash, "t0": time.monotonic(),
+                 "expected": self._expected_launch_seconds(tool["launch"]), "loading": False}
+        self.after(150, self._watch_tool_launch, state)
+        return True
+
+    def _watch_tool_launch(self, state: dict):
+        splash: SplashScreen = state["splash"]
+        proc: subprocess.Popen = state["proc"]
+        elapsed = time.monotonic() - state["t0"]
+        expected = state["expected"]
+
+        try:
+            if not state["loading"] and elapsed > 0.4:
+                state["loading"] = True
+                splash.finish_step("start", 10)
+                splash.set_step("load", state["tool"].get("loading_label", "Loading"),
+                                10, 14, creep=False)
+
+            # Pace the bar by how long this tool took last time; past that,
+            # keep inching forward without ever claiming 100%.
+            if elapsed <= expected:
+                splash.set_target(10 + 80 * (elapsed / expected))
+            else:
+                splash.set_target(90 + 6 * (1 - math.exp(-(elapsed - expected) / expected)))
+
+            has_window = process_has_visible_window(proc.pid)
+            exit_code = proc.poll()
+            if has_window or (has_window is None and elapsed >= max(4.0, expected)):
+                # has_window is None = can't detect windows here (not Windows):
+                # assume it is up after the usual time.
+                self._finish_tool_launch(state, "ready", elapsed)
+            elif exit_code is not None:
+                self._finish_tool_launch(state, "exited", elapsed, exit_code)
+            elif elapsed > TOOL_LAUNCH_TIMEOUT:
+                self._finish_tool_launch(state, "timeout", elapsed)
+            else:
+                self.after(150, self._watch_tool_launch, state)
+        except tk.TclError:
+            pass  # the hub was closed meanwhile
+
+    def _finish_tool_launch(self, state: dict, outcome: str, elapsed: float,
+                            exit_code: int | None = None):
+        tool, splash = state["tool"], state["splash"]
+        title = tool["title"]
+
+        def clear_opening():
+            self._opening.discard(title)
+            self._schedule_redraw()
+
+        if outcome == "ready":
+            self._remember_launch_seconds(tool["launch"], elapsed)
+            splash.show_ready("Ready!", f"{title} is open")
+            self.after(TOOL_READY_HOLD_MS, lambda: splash.close(clear_opening))
+            return
+
+        splash.close(clear_opening)
+        if outcome == "exited" and exit_code not in (0, None):
+            messagebox.showerror(
+                f"Could not open {title}",
+                f"{title} closed before its window appeared (exit code {exit_code}).",
+            )
+
+    def _launch_search_engine(self) -> subprocess.Popen | None:
         if not SEARCH_ENGINE_EXE.exists():
             messagebox.showerror(
                 "Search Engine not found",
@@ -1284,15 +1514,14 @@ class KoogleSuiteHub(tk.Tk):
                 "koggle_search_engine.exe is not kept in git. Copy it into the "
                 "same folder as this app and try again.",
             )
-            return False
+            return None
         try:
-            subprocess.Popen([str(SEARCH_ENGINE_EXE)], cwd=str(SEARCH_ENGINE_EXE.parent))
-            return True
+            return subprocess.Popen([str(SEARCH_ENGINE_EXE)], cwd=str(SEARCH_ENGINE_EXE.parent))
         except Exception as exc:
             messagebox.showerror("Could not open Search Engine", str(exc))
-            return False
+            return None
 
-    def _launch_budget_process(self) -> bool:
+    def _launch_budget_process(self) -> subprocess.Popen | None:
         if IS_FROZEN:
             # This hub is itself a packaged .exe - launch the OTHER packaged exe.
             if not BUDGET_TOOL_EXE.exists():
@@ -1302,7 +1531,7 @@ class KoogleSuiteHub(tk.Tk):
                     "Build it with build_all.py and keep BudgetEstimatorV2.exe "
                     "in the same folder as this app.",
                 )
-                return False
+                return None
             cmd = [str(BUDGET_TOOL_EXE)]
         else:
             # Running from source - sys.executable is a real Python interpreter.
@@ -1312,14 +1541,13 @@ class KoogleSuiteHub(tk.Tk):
                     f"Could not find:\n{BUDGET_TOOL_SCRIPT}\n\n"
                     "Make sure budget_gui.py is in the same folder as this hub.",
                 )
-                return False
+                return None
             cmd = [sys.executable, str(BUDGET_TOOL_SCRIPT)]
         try:
-            subprocess.Popen(cmd, cwd=str(APP_DIR))
-            return True
+            return subprocess.Popen(cmd, cwd=str(APP_DIR))
         except Exception as exc:
             messagebox.showerror("Could not open Budget Estimation", str(exc))
-            return False
+            return None
 
 
 if __name__ == "__main__":
