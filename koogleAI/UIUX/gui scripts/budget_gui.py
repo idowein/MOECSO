@@ -10,9 +10,12 @@ statistical pattern between proposed methodology and historical call pricing
 on a small dataset (see the notebook, section 9). Treat the output as a
 reference range for setting a new call's budget, not as ground truth.
 
-Custom icon: put an icon.ico file next to this script (see convert_to_ico.py
-for turning any image you choose into a proper .ico) and it is used both for
-the running window (taskbar) and, once packaged, for the .exe file itself.
+Window / taskbar icon: the Koogle logo (koogleAI_logo2.* or
+koogle_logo_beige_bg.*, any image extension), looked up beside this
+script/exe, inside the exe bundle (build_all.py embeds it), then in
+MOECSO/koogleAI/UIUX/logos. Its flat background is removed so the icon is
+clean. If an icon.ico sits beside the script/exe it takes priority. If
+nothing is found, Tk's default feather icon remains.
 
 Header logo: HEADER_LOGO_PATH below points to an image shown at the top of
 the window. Its own background should already match GUI_BG ("#F0F0F0") so it
@@ -45,7 +48,7 @@ from tkinter import ttk, messagebox
 
 import joblib
 import pandas as pd
-from PIL import Image, ImageTk
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
 
 # sklearn/mord are never called directly in this file - joblib.load() needs
 # them internally to unpickle the trained Pipeline/LogisticAT objects, and
@@ -63,6 +66,21 @@ import mord  # noqa: F401
 # working, with no dependency on a fixed/derived MOECSO path.
 APP_DIR = Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve().parent
 
+# Inside a PyInstaller --onefile exe, files added with --add-data are
+# unpacked here at runtime (build_all.py embeds the Koogle logo this way).
+BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
+
+# Give this process its own taskbar identity on Windows, so when it runs
+# from source (python.exe) the taskbar shows THIS window's icon instead of
+# grouping it under Python's icon. Must run before any window is created.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "MOECSO.KoogleSuite.BudgetEstimator")
+    except Exception:
+        pass
+
 
 def find_moecso_dir() -> Path | None:
     """Best-effort only: locate the MOECSO project folder starting from
@@ -79,8 +97,79 @@ def find_moecso_dir() -> Path | None:
             return sibling
     return None
 
-
 MOECSO_DIR = find_moecso_dir()
+
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+# The Koogle logo used for the window/taskbar icon - same names, in the same
+# order, as LOGO_PATH in hub_gui.py and KOOGLE_LOGO in build_all.py.
+KOOGLE_LOGO_STEMS = ("koogleAI_logo2", "koogle_logo_beige_bg")
+ICON_SIZES = (256, 64, 48, 32, 16)
+
+
+def find_image(stems: tuple[str, ...]) -> Path | None:
+    """Find an image by name, whatever its extension. Looks beside this
+    script/exe, inside the exe bundle, then in the MOECSO logos and
+    gui-scripts folders. Returns None if not found."""
+    folders = [APP_DIR, BUNDLE_DIR]
+    if MOECSO_DIR is not None:
+        ui_dir = MOECSO_DIR / "koogleAI" / "UIUX"
+        folders += [ui_dir / "logos", ui_dir / "gui scripts"]
+    for folder in folders:
+        for stem in stems:
+            for ext in IMAGE_EXTS:
+                candidate = folder / f"{stem}{ext}"
+                if candidate.is_file():
+                    return candidate
+    return None
+
+
+def remove_flat_background(img: Image.Image, tolerance: int = 22) -> Image.Image:
+    """Make a logo's flat background transparent by flood-filling from the
+    corners only, so light colours INSIDE the logo are kept (same as the hub)."""
+    img = img.convert("RGBA")
+    probe = img.convert("RGB")
+    sentinel = (255, 0, 255)
+    w, h = probe.size
+    for corner in ((0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)):
+        if probe.getpixel(corner) != sentinel:
+            ImageDraw.floodfill(probe, corner, sentinel, thresh=tolerance)
+    r, g, b = probe.split()
+    is_bg = ImageChops.multiply(
+        ImageChops.multiply(r.point(lambda v: 255 if v == 255 else 0),
+                            g.point(lambda v: 255 if v == 0 else 0)),
+        b.point(lambda v: 255 if v == 255 else 0))
+    keep = ImageChops.invert(is_bg).filter(ImageFilter.GaussianBlur(0.6))
+    img.putalpha(ImageChops.multiply(img.getchannel("A"), keep))
+    return img.crop(img.getbbox() or (0, 0, *img.size))
+
+
+def apply_koogle_icon(window: tk.Tk) -> None:
+    """Window + taskbar icon for `window` (and every dialog it opens):
+    icon.ico beside the script/exe if present, otherwise the Koogle logo.
+    Never raises - worst case the default Tk icon stays."""
+    for folder in (APP_DIR, BUNDLE_DIR):
+        ico = folder / ICON_FILENAME
+        if ico.is_file():
+            try:
+                window.iconbitmap(default=str(ico))  # .ico only, Windows
+                return
+            except tk.TclError:
+                break  # unreadable .ico - fall through to the Koogle logo
+
+    logo_path = find_image(KOOGLE_LOGO_STEMS)
+    if logo_path is None:
+        return
+    try:
+        logo = remove_flat_background(Image.open(logo_path))
+        side = max(logo.size)  # pad to a square so the icon isn't stretched
+        square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        square.alpha_composite(logo, ((side - logo.width) // 2, (side - logo.height) // 2))
+        photos = [ImageTk.PhotoImage(square.resize((s, s), Image.LANCZOS), master=window)
+                  for s in ICON_SIZES]
+        window._koogle_icons = photos  # keep references, or Tk drops the images
+        window.iconphoto(True, *photos)
+    except Exception:
+        pass
 
 
 def resolve_asset(filename: str, moecso_subpath: tuple[str, ...]) -> Path:
@@ -104,7 +193,7 @@ BUNDLE_PATH = resolve_asset(
     "budget_model_bundle.joblib",
     ("koogleAI", "budget_estimation", "budget_model_bundle.joblib"),
 )
-ICON_FILENAME = "icon.ico"   # put your chosen picture here, converted to .ico (see convert_to_ico.py)
+ICON_FILENAME = "icon.ico"   # optional override; otherwise the Koogle logo is used
 
 # Header logo shown at the top of the window - path to the image with the
 # background already matched to GUI_BG (see koogle_glasses_gray_bg.png).
@@ -119,12 +208,6 @@ HEADER_LOGO_SIZE = 96  # px, square thumbnail
 # happens to use.
 GUI_BG = "#F0F0F0"
 
-
-def resource_path(filename: str) -> Path:
-    """Resolve a file next to the script when run normally, or next to the
-    bundled data when run from a PyInstaller --onefile .exe."""
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    return base / filename
 
 # Human-readable labels for the raw column names, since the model's feature
 # names (e.g. "duration_months_bin") aren't meant for an end user to read.
@@ -162,13 +245,7 @@ class BudgetEstimatorApp(tk.Tk):
 
     # ------------------------------------------------------------------
     def _set_window_icon(self):
-        icon_path = resource_path(ICON_FILENAME)
-        if not icon_path.exists():
-            return  # no custom icon provided - fall back to Tkinter's default
-        try:
-            self.iconbitmap(default=str(icon_path))   # .ico only, Windows
-        except tk.TclError:
-            pass  # e.g. a non-.ico file slipped in - keep the default icon rather than crash
+        apply_koogle_icon(self)
 
     # ------------------------------------------------------------------
     def _add_header_logo(self):
@@ -295,15 +372,33 @@ class BudgetEstimatorApp(tk.Tk):
             messagebox.showerror("Prediction failed", f"Could not compute an estimate:\n\n{exc}")
 
 
+def fatal_error(title: str, message: str) -> None:
+    """Show an error before the main window exists, then exit. Uses a hidden
+    root that carries the Koogle icon, so the dialog (and its taskbar entry)
+    doesn't show Tk's feather or a stray empty "tk" window."""
+    root = tk.Tk()
+    root.withdraw()
+    apply_koogle_icon(root)
+    messagebox.showerror(title, message, parent=root)
+    root.destroy()
+    sys.exit(1)
+
+
 def load_bundle(path: Path) -> dict:
     if not path.exists():
-        messagebox.showerror(
+        fatal_error(
             "Model file not found",
             f"Could not find the model bundle at:\n{path}\n\n"
             "Run the export cell at the end of Budget_estimation.ipynb first.",
         )
-        sys.exit(1)
-    return joblib.load(path)
+    try:
+        return joblib.load(path)
+    except Exception as exc:
+        # In a --windowed exe an unhandled error would just vanish silently.
+        fatal_error(
+            "Could not load the model",
+            f"The model bundle at:\n{path}\n\ncould not be loaded:\n\n{exc}",
+        )
 
 
 if __name__ == "__main__":
